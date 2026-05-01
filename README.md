@@ -30,30 +30,41 @@ python app.py
 - 默认分析标的：`0700.HK`
 - RSI 周期：14
 
-## Cloudflare 部署说明
+## Azure 部署（App Service）
 
-你遇到的报错：
+项目已适配 Azure 运行：
 
-`Could not find a wrangler.json, wrangler.jsonc, or wrangler.toml file in the provided directory.`
+- `app.py` 会读取 `PORT` 并监听 `0.0.0.0`
+- `requirements.txt` 已包含 `gunicorn`
+- 一键部署脚本：`scripts/deploy-azure.ps1`
 
-已在项目根目录新增 `wrangler.toml`，可解决该错误。
-
-### 方式 A：直接验证 Wrangler 配置
-
-```bash
-wrangler deploy
-```
-
-这会部署 `cloudflare/worker.js`。
-
-### 方式 B：给 Dash 后端做 Cloudflare 反向代理
-
-Cloudflare Workers 不能直接运行 Dash/Flask 这种长驻 Python 服务器进程。
-推荐将 Dash 先部署到支持 Python Web 服务的平台（如 Render/Fly.io/VM），再用 Worker 代理：
+### 1) 先确认 Azure 登录和订阅权限
 
 ```bash
-wrangler secret put BACKEND_URL
-wrangler deploy
+az account show
+az account list -o table
 ```
 
-将 `BACKEND_URL` 设为你的 Dash 服务地址（例如 `https://your-dash-service.example.com`）。
+如果遇到 `AADSTS700082`（refresh token 过期），重新登录：
+
+```bash
+az logout
+az login --tenant <your-tenant-id>
+```
+
+如果遇到 `AuthorizationFailed`，说明当前订阅没有创建资源权限。请切换到有权限订阅，或申请 `Contributor` 角色。
+
+### 2) 一键部署
+
+```bash
+powershell -ExecutionPolicy Bypass -File scripts/deploy-azure.ps1 -SubscriptionId <your-subscription-id>
+```
+
+脚本会自动完成：
+
+1. 打包应用
+2. 创建 Resource Group / Linux App Service Plan / Web App
+3. 设置启动命令：`gunicorn --bind=0.0.0.0:$PORT --timeout 600 app:server`
+4. Zip 部署
+
+成功后会输出访问地址：`https://<app-name>.azurewebsites.net`
