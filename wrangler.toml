@@ -1,0 +1,10 @@
+name = "stock-analyzer"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-05-01"
+
+[observability]
+enabled = true
+
+[vars]
+# Optional: set your real backend URL if you host Dash elsewhere (Render/Fly/VM)
+# BACKEND_URL = "https://your-backend.example.com"

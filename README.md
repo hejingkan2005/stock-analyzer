@@ -29,3 +29,31 @@ python app.py
 - 数据来源：Yahoo Finance（通过 `yfinance`）
 - 默认分析标的：`0700.HK`
 - RSI 周期：14
+
+## Cloudflare 部署说明
+
+你遇到的报错：
+
+`Could not find a wrangler.json, wrangler.jsonc, or wrangler.toml file in the provided directory.`
+
+已在项目根目录新增 `wrangler.toml`，可解决该错误。
+
+### 方式 A：直接验证 Wrangler 配置
+
+```bash
+wrangler deploy
+```
+
+这会部署 `cloudflare/worker.js`。
+
+### 方式 B：给 Dash 后端做 Cloudflare 反向代理
+
+Cloudflare Workers 不能直接运行 Dash/Flask 这种长驻 Python 服务器进程。
+推荐将 Dash 先部署到支持 Python Web 服务的平台（如 Render/Fly.io/VM），再用 Worker 代理：
+
+```bash
+wrangler secret put BACKEND_URL
+wrangler deploy
+```
+
+将 `BACKEND_URL` 设为你的 Dash 服务地址（例如 `https://your-dash-service.example.com`）。
