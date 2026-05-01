@@ -33,6 +33,7 @@ body {
 }
 
 .header {
+    position: relative;
     border-radius: 20px;
     padding: 22px 22px 20px;
     margin-bottom: 16px;
@@ -49,6 +50,42 @@ body {
     font-family: "Space Grotesk", "Noto Sans SC", sans-serif;
     font-size: clamp(1.45rem, 2.4vw, 2rem);
     letter-spacing: 0.3px;
+}
+
+.header-main {
+    padding-right: 128px;
+}
+
+.header-lang {
+    position: absolute;
+    top: 12px;
+    right: 14px;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.34);
+    background: rgba(255, 255, 255, 0.14);
+    backdrop-filter: blur(4px);
+}
+
+.lang-icon {
+    font-size: 13px;
+    line-height: 1;
+}
+
+.lang-radio > label {
+    margin: 0 0 0 6px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #f3fbff;
+    letter-spacing: 0.02em;
+    cursor: pointer;
+}
+
+.lang-radio input {
+    margin-right: 3px;
 }
 
 .header > div:last-child {
@@ -257,6 +294,16 @@ h4 {
 }
 
 @media (max-width: 720px) {
+    .header-main {
+        padding-right: 0;
+    }
+
+    .header-lang {
+        position: static;
+        margin-top: 10px;
+        width: fit-content;
+    }
+
     .page {
         padding: 16px 10px 24px;
     }

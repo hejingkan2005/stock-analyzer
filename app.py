@@ -14,6 +14,134 @@ PRESET_STOCKS = [
     {"label": "阿里香港 (9988.HK)", "value": "9988.HK"},
 ]
 
+LANGUAGES = [
+    {"label": "中", "value": "zh"},
+    {"label": "EN", "value": "en"},
+]
+
+I18N = {
+    "zh": {
+        "header_title": "港股投资分析 Dashboard",
+        "header_subtitle": "港股投资分析: 价格、均线、分位数、RSI、年化收益与波动",
+        "preset_stock": "预设股票",
+        "ticker": "股票代码",
+        "quick_range": "快捷区间",
+        "date_range": "日期范围",
+        "language": "语言",
+        "latest_close": "最新收盘价",
+        "percentile": "历史分位数",
+        "daily_change": "单日涨跌",
+        "price_ma": "价格与均线",
+        "date": "日期",
+        "price_hkd": "价格 (HKD)",
+        "close": "收盘价",
+        "rsi_title": "RSI 强弱指标",
+        "annual_band": "年化收益 / 波动区间",
+        "year": "年份",
+        "rate": "比率",
+        "return_plus_std": "收益 + 波动",
+        "return_minus_std": "收益 - 波动",
+        "annualized_return": "年化收益",
+        "no_yearly_stats": "暂无年度统计数据。",
+        "yearly_stats": "年度统计",
+        "std": "波动率",
+        "volatility_range": "波动区间 (收益-波动, 收益+波动)",
+        "not_available": "暂无",
+        "drawdown": "回撤",
+        "drawdown_stats": "最大回撤统计",
+        "no_drawdown": "暂无回撤统计数据。",
+        "max_drawdown": "最大回撤",
+        "current_drawdown": "当前回撤",
+        "peak_date": "峰值日期",
+        "trough_date": "谷底日期",
+        "recovery_date": "修复日期",
+        "current_underwater_days": "当前水下天数",
+        "longest_underwater_days": "最长水下天数",
+        "not_recovered": "尚未修复",
+        "valuation_snapshot": "估值快照",
+        "data_source": "数据来源: Yahoo Finance (TTM / 最新可用)",
+        "trailing_pe": "静态市盈率",
+        "forward_pe": "预期市盈率",
+        "price_book": "市净率",
+        "price_sales": "市销率 (TTM)",
+        "dividend_yield": "股息率",
+        "market_cap": "市值",
+        "enterprise_value": "企业价值",
+        "ev_revenue": "EV / Revenue",
+        "ev_ebitda": "EV / EBITDA",
+        "invalid_date": "开始日期必须早于结束日期。",
+        "no_data": "未找到数据，请检查股票代码或日期范围。",
+        "preset_tencent": "腾讯香港 (0700.HK)",
+        "preset_alibaba": "阿里香港 (9988.HK)",
+    },
+    "en": {
+        "header_title": "HK Stock Analysis Dashboard",
+        "header_subtitle": "Price, Moving Averages, Percentile, RSI, Annualized Return and Volatility",
+        "preset_stock": "Preset Stock",
+        "ticker": "Ticker",
+        "quick_range": "Quick Range",
+        "date_range": "Date Range",
+        "language": "Language",
+        "latest_close": "Latest Close",
+        "percentile": "Percentile in History",
+        "daily_change": "Daily Change",
+        "price_ma": "Price with Moving Averages",
+        "date": "Date",
+        "price_hkd": "Price (HKD)",
+        "close": "Close",
+        "rsi_title": "RSI Strength Index",
+        "annual_band": "Annualized Return / Std Band",
+        "year": "Year",
+        "rate": "Rate",
+        "return_plus_std": "Return + Std",
+        "return_minus_std": "Return - Std",
+        "annualized_return": "Annualized Return",
+        "no_yearly_stats": "No yearly stats available.",
+        "yearly_stats": "Yearly Stats",
+        "std": "Std",
+        "volatility_range": "Volatility Range (Return-Std, Return+Std)",
+        "not_available": "N/A",
+        "drawdown": "Drawdown",
+        "drawdown_stats": "Max Drawdown Stats",
+        "no_drawdown": "No drawdown stats available.",
+        "max_drawdown": "Max Drawdown",
+        "current_drawdown": "Current Drawdown",
+        "peak_date": "Peak Date",
+        "trough_date": "Trough Date",
+        "recovery_date": "Recovery Date",
+        "current_underwater_days": "Current Underwater Days",
+        "longest_underwater_days": "Longest Underwater Days",
+        "not_recovered": "Not recovered",
+        "valuation_snapshot": "Valuation Snapshot",
+        "data_source": "Data source: Yahoo Finance (TTM / latest available)",
+        "trailing_pe": "Trailing PE",
+        "forward_pe": "Forward PE",
+        "price_book": "Price / Book",
+        "price_sales": "Price / Sales (TTM)",
+        "dividend_yield": "Dividend Yield",
+        "market_cap": "Market Cap",
+        "enterprise_value": "Enterprise Value",
+        "ev_revenue": "EV / Revenue",
+        "ev_ebitda": "EV / EBITDA",
+        "invalid_date": "Start date must be earlier than end date.",
+        "no_data": "No data found. Check ticker or date range.",
+        "preset_tencent": "Tencent HK (0700.HK)",
+        "preset_alibaba": "Alibaba HK (9988.HK)",
+    },
+}
+
+
+def t(lang: str, key: str) -> str:
+    safe_lang = lang if lang in I18N else "zh"
+    return I18N[safe_lang].get(key, I18N["en"].get(key, key))
+
+
+def make_preset_options(lang: str) -> list[dict]:
+    return [
+        {"label": t(lang, "preset_tencent"), "value": "0700.HK"},
+        {"label": t(lang, "preset_alibaba"), "value": "9988.HK"},
+    ]
+
 
 def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
@@ -52,20 +180,20 @@ def load_data(ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
     return df
 
 
-def make_price_figure(df: pd.DataFrame, ticker: str) -> go.Figure:
+def make_price_figure(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name="Close", line=dict(width=2.4, color="#003049")))
+    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode="lines", name=t(lang, "close"), line=dict(width=2.4, color="#003049")))
     fig.add_trace(go.Scatter(x=df.index, y=df["MA5"], mode="lines", name="MA5", line=dict(width=1.6, color="#f77f00")))
     fig.add_trace(go.Scatter(x=df.index, y=df["MA50"], mode="lines", name="MA50", line=dict(width=1.6, color="#2a9d8f")))
     fig.add_trace(go.Scatter(x=df.index, y=df["MA250"], mode="lines", name="MA250", line=dict(width=1.6, color="#6a4c93")))
 
     fig.update_layout(
-        title=f"{ticker} Price with MA",
+        title=f"{ticker} {t(lang, 'price_ma')}",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.9)",
         hovermode="x unified",
-        xaxis_title="Date",
-        yaxis_title="Price (HKD)",
+        xaxis_title=t(lang, "date"),
+        yaxis_title=t(lang, "price_hkd"),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=20, r=20, t=48, b=20),
     )
@@ -73,17 +201,17 @@ def make_price_figure(df: pd.DataFrame, ticker: str) -> go.Figure:
     return fig
 
 
-def make_rsi_figure(df: pd.DataFrame) -> go.Figure:
+def make_rsi_figure(df: pd.DataFrame, lang: str) -> go.Figure:
     fig = go.Figure()
     fig.add_trace(go.Scatter(x=df.index, y=df["RSI"], mode="lines", name="RSI(14)", line=dict(width=2.2, color="#003049")))
     fig.add_hline(y=70, line_dash="dash", line_color="#d62828", annotation_text="70")
     fig.add_hline(y=30, line_dash="dash", line_color="#2a9d8f", annotation_text="30")
     fig.update_layout(
-        title="RSI Strength Index",
+        title=t(lang, "rsi_title"),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.9)",
         hovermode="x unified",
-        xaxis_title="Date",
+        xaxis_title=t(lang, "date"),
         yaxis_title="RSI",
         yaxis=dict(range=[0, 100]),
         margin=dict(l=20, r=20, t=48, b=20),
@@ -123,15 +251,15 @@ def compute_yearly_stats(df: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(rows).sort_values("Year")
 
 
-def make_yearly_band_figure(yearly_stats: pd.DataFrame) -> go.Figure:
+def make_yearly_band_figure(yearly_stats: pd.DataFrame, lang: str) -> go.Figure:
     fig = go.Figure()
     if yearly_stats.empty:
         fig.update_layout(
-            title="Annualized Return / Std Band",
+            title=t(lang, "annual_band"),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(255,255,255,0.9)",
-            xaxis_title="Year",
-            yaxis_title="Rate",
+            xaxis_title=t(lang, "year"),
+            yaxis_title=t(lang, "rate"),
             margin=dict(l=20, r=20, t=48, b=20),
         )
         return fig
@@ -141,7 +269,7 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame) -> go.Figure:
             x=yearly_stats["Year"],
             y=yearly_stats["UpperBand"],
             mode="lines",
-            name="Return + Std",
+            name=t(lang, "return_plus_std"),
             line=dict(width=1.6, color="#90be6d"),
         )
     )
@@ -150,7 +278,7 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame) -> go.Figure:
             x=yearly_stats["Year"],
             y=yearly_stats["LowerBand"],
             mode="lines",
-            name="Return - Std",
+            name=t(lang, "return_minus_std"),
             line=dict(width=1.6, color="#f94144"),
             fill="tonexty",
             fillcolor="rgba(33, 158, 188, 0.16)",
@@ -161,17 +289,17 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame) -> go.Figure:
             x=yearly_stats["Year"],
             y=yearly_stats["AnnualReturn"],
             mode="lines+markers",
-            name="Annualized Return",
+            name=t(lang, "annualized_return"),
             line=dict(width=2.4, color="#003049"),
         )
     )
 
     fig.update_layout(
-        title="Annualized Return / Std Band",
+        title=t(lang, "annual_band"),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.9)",
-        xaxis_title="Year",
-        yaxis_title="Rate",
+        xaxis_title=t(lang, "year"),
+        yaxis_title=t(lang, "rate"),
         hovermode="x unified",
         legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=20, r=20, t=48, b=20),
@@ -180,17 +308,17 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame) -> go.Figure:
     return fig
 
 
-def make_yearly_stats_table(yearly_stats: pd.DataFrame) -> html.Div:
+def make_yearly_stats_table(yearly_stats: pd.DataFrame, lang: str) -> html.Div:
     if yearly_stats.empty:
-        return html.Div("No yearly stats available.", className="metric-title")
+        return html.Div(t(lang, "no_yearly_stats"), className="metric-title")
 
     header = html.Thead(
         html.Tr(
             [
-                html.Th("Year"),
-                html.Th("Annualized Return"),
-                html.Th("Std"),
-                html.Th("Volatility Range (Return-Std, Return+Std)"),
+                html.Th(t(lang, "year")),
+                html.Th(t(lang, "annualized_return")),
+                html.Th(t(lang, "std")),
+                html.Th(t(lang, "volatility_range")),
             ]
         )
     )
@@ -201,21 +329,21 @@ def make_yearly_stats_table(yearly_stats: pd.DataFrame) -> html.Div:
         annual_std = row["AnnualStd"]
         lower = row["LowerBand"]
         upper = row["UpperBand"]
-        range_text = "N/A" if pd.isna(lower) or pd.isna(upper) else f"{lower:.2%} ~ {upper:.2%}"
+        range_text = t(lang, "not_available") if pd.isna(lower) or pd.isna(upper) else f"{lower:.2%} ~ {upper:.2%}"
 
         body_rows.append(
             html.Tr(
                 [
                     html.Td(str(int(row["Year"]))),
                     html.Td(f"{annual_return:.2%}"),
-                    html.Td("N/A" if pd.isna(annual_std) else f"{annual_std:.2%}"),
+                    html.Td(t(lang, "not_available") if pd.isna(annual_std) else f"{annual_std:.2%}"),
                     html.Td(range_text),
                 ]
             )
         )
 
     table = html.Table([header, html.Tbody(body_rows)], className="yearly-table")
-    return html.Div([html.H4("Yearly Stats"), table])
+    return html.Div([html.H4(t(lang, "yearly_stats")), table])
 
 
 def compute_drawdown_stats(df: pd.DataFrame) -> tuple[pd.Series, dict]:
@@ -264,15 +392,15 @@ def compute_drawdown_stats(df: pd.DataFrame) -> tuple[pd.Series, dict]:
     return drawdown, stats
 
 
-def make_drawdown_figure(drawdown: pd.Series, ticker: str) -> go.Figure:
+def make_drawdown_figure(drawdown: pd.Series, ticker: str, lang: str) -> go.Figure:
     fig = go.Figure()
     if drawdown.empty:
         fig.update_layout(
-            title="Drawdown",
+            title=t(lang, "drawdown"),
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(255,255,255,0.9)",
-            xaxis_title="Date",
-            yaxis_title="Drawdown",
+            xaxis_title=t(lang, "date"),
+            yaxis_title=t(lang, "drawdown"),
             margin=dict(l=20, r=20, t=48, b=20),
         )
         return fig
@@ -282,44 +410,44 @@ def make_drawdown_figure(drawdown: pd.Series, ticker: str) -> go.Figure:
             x=drawdown.index,
             y=drawdown,
             mode="lines",
-            name="Drawdown",
+            name=t(lang, "drawdown"),
             line=dict(width=2.2, color="#c1121f"),
             fill="tozeroy",
             fillcolor="rgba(193, 18, 31, 0.12)",
         )
     )
     fig.update_layout(
-        title=f"{ticker} Drawdown",
+        title=f"{ticker} {t(lang, 'drawdown')}",
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(255,255,255,0.9)",
         hovermode="x unified",
-        xaxis_title="Date",
-        yaxis_title="Drawdown",
+        xaxis_title=t(lang, "date"),
+        yaxis_title=t(lang, "drawdown"),
         margin=dict(l=20, r=20, t=48, b=20),
     )
     fig.update_yaxes(tickformat=".1%")
     return fig
 
 
-def make_drawdown_panel(drawdown_stats: dict) -> html.Div:
+def make_drawdown_panel(drawdown_stats: dict, lang: str) -> html.Div:
     if not drawdown_stats:
-        return html.Div("No drawdown stats available.", className="metric-title")
+        return html.Div(t(lang, "no_drawdown"), className="metric-title")
 
-    recovery_text = "Not recovered" if drawdown_stats["recovery_date"] is None else str(drawdown_stats["recovery_date"].date())
+    recovery_text = t(lang, "not_recovered") if drawdown_stats["recovery_date"] is None else str(drawdown_stats["recovery_date"].date())
     return html.Div(
         [
-            html.H4("Max Drawdown Stats"),
+            html.H4(t(lang, "drawdown_stats")),
             html.Table(
                 [
                     html.Tbody(
                         [
-                            html.Tr([html.Th("Max Drawdown"), html.Td(f"{drawdown_stats['max_drawdown']:.2%}")]),
-                            html.Tr([html.Th("Current Drawdown"), html.Td(f"{drawdown_stats['current_drawdown']:.2%}")]),
-                            html.Tr([html.Th("Peak Date"), html.Td(str(drawdown_stats["peak_date"].date()))]),
-                            html.Tr([html.Th("Trough Date"), html.Td(str(drawdown_stats["trough_date"].date()))]),
-                            html.Tr([html.Th("Recovery Date"), html.Td(recovery_text)]),
-                            html.Tr([html.Th("Current Underwater Days"), html.Td(str(drawdown_stats["current_underwater_days"]))]),
-                            html.Tr([html.Th("Longest Underwater Days"), html.Td(str(drawdown_stats["longest_underwater_days"]))]),
+                            html.Tr([html.Th(t(lang, "max_drawdown")), html.Td(f"{drawdown_stats['max_drawdown']:.2%}")]),
+                            html.Tr([html.Th(t(lang, "current_drawdown")), html.Td(f"{drawdown_stats['current_drawdown']:.2%}")]),
+                            html.Tr([html.Th(t(lang, "peak_date")), html.Td(str(drawdown_stats["peak_date"].date()))]),
+                            html.Tr([html.Th(t(lang, "trough_date")), html.Td(str(drawdown_stats["trough_date"].date()))]),
+                            html.Tr([html.Th(t(lang, "recovery_date")), html.Td(recovery_text)]),
+                            html.Tr([html.Th(t(lang, "current_underwater_days")), html.Td(str(drawdown_stats["current_underwater_days"]))]),
+                            html.Tr([html.Th(t(lang, "longest_underwater_days")), html.Td(str(drawdown_stats["longest_underwater_days"]))]),
                         ]
                     )
                 ],
@@ -367,13 +495,24 @@ def get_valuation_snapshot(ticker: str) -> list[tuple[str, str]]:
     return valuation_items
 
 
-def make_valuation_panel(ticker: str) -> html.Div:
+def make_valuation_panel(ticker: str, lang: str) -> html.Div:
     items = get_valuation_snapshot(ticker)
-    rows = [html.Tr([html.Th(name), html.Td(value)]) for name, value in items]
+    name_map = {
+        "Trailing PE": t(lang, "trailing_pe"),
+        "Forward PE": t(lang, "forward_pe"),
+        "Price / Book": t(lang, "price_book"),
+        "Price / Sales (TTM)": t(lang, "price_sales"),
+        "Dividend Yield": t(lang, "dividend_yield"),
+        "Market Cap": t(lang, "market_cap"),
+        "Enterprise Value": t(lang, "enterprise_value"),
+        "EV / Revenue": t(lang, "ev_revenue"),
+        "EV / EBITDA": t(lang, "ev_ebitda"),
+    }
+    rows = [html.Tr([html.Th(name_map.get(name, name)), html.Td(value)]) for name, value in items]
     return html.Div(
         [
-            html.H4("Valuation Snapshot"),
-            html.Div("Data source: Yahoo Finance (TTM / latest available)", className="metric-title"),
+            html.H4(t(lang, "valuation_snapshot")),
+            html.Div(t(lang, "data_source"), className="metric-title"),
             html.Table([html.Tbody(rows)], className="summary-table"),
         ]
     )
@@ -391,8 +530,26 @@ app.layout = html.Div(
             [
                 html.Div(
                     [
-                        html.H2("港股投资分析 Dashboard", style={"margin": "0 0 6px 0"}),
-                        html.Div("港股投资分析: 价格、均线、分位数、RSI、年化收益与波动"),
+                        html.Div(
+                            [
+                                html.H2(id="header-title", style={"margin": "0 0 6px 0"}),
+                                html.Div(id="header-subtitle"),
+                            ],
+                            className="header-main",
+                        ),
+                        html.Div(
+                            [
+                                html.Span("🌐", className="lang-icon"),
+                                dcc.RadioItems(
+                                    id="language-radio",
+                                    options=LANGUAGES,
+                                    value="zh",
+                                    inline=True,
+                                    className="lang-radio",
+                                ),
+                            ],
+                            className="header-lang",
+                        ),
                     ],
                     className="header",
                 ),
@@ -400,10 +557,10 @@ app.layout = html.Div(
                     [
                         html.Div(
                             [
-                                html.Div("预设股票", className="metric-title"),
+                                html.Div(id="preset-title", className="metric-title"),
                                 dcc.Dropdown(
                                     id="preset-stock",
-                                    options=PRESET_STOCKS,
+                                    options=make_preset_options("zh"),
                                     value=DEFAULT_TICKER,
                                     clearable=False,
                                 ),
@@ -412,14 +569,14 @@ app.layout = html.Div(
                         ),
                         html.Div(
                             [
-                                html.Div("Ticker", className="metric-title"),
+                                html.Div(id="ticker-title", className="metric-title"),
                                 dcc.Input(id="ticker-input", type="text", value=DEFAULT_TICKER, debounce=True, style={"width": "100%", "padding": "8px", "fontSize": "16px"}),
                             ],
                             className="card",
                         ),
                         html.Div(
                             [
-                                html.Div("Quick Range", className="metric-title"),
+                                html.Div(id="range-title", className="metric-title"),
                                 dcc.RadioItems(
                                     id="range-radio",
                                     options=[
@@ -438,7 +595,7 @@ app.layout = html.Div(
                         ),
                         html.Div(
                             [
-                                html.Div("Date Range", className="metric-title"),
+                                html.Div(id="date-title", className="metric-title"),
                                 dcc.DatePickerRange(
                                     id="date-range",
                                     start_date=default_start,
@@ -480,6 +637,37 @@ def sync_ticker_with_preset(preset_ticker: str):
 
 
 @app.callback(
+    Output("header-title", "children"),
+    Output("header-subtitle", "children"),
+    Output("preset-title", "children"),
+    Output("ticker-title", "children"),
+    Output("range-title", "children"),
+    Output("date-title", "children"),
+    Output("range-radio", "options"),
+    Output("preset-stock", "options"),
+    Input("language-radio", "value"),
+)
+def update_static_text(lang: str):
+    current_lang = lang if lang in I18N else "zh"
+    return (
+        t(current_lang, "header_title"),
+        t(current_lang, "header_subtitle"),
+        t(current_lang, "preset_stock"),
+        t(current_lang, "ticker"),
+        t(current_lang, "quick_range"),
+        t(current_lang, "date_range"),
+        [
+            {"label": "1月" if current_lang == "zh" else "1M", "value": "1M"},
+            {"label": "3月" if current_lang == "zh" else "3M", "value": "3M"},
+            {"label": "6月" if current_lang == "zh" else "6M", "value": "6M"},
+            {"label": "1年" if current_lang == "zh" else "1Y", "value": "1Y"},
+            {"label": "5年" if current_lang == "zh" else "5Y", "value": "5Y"},
+        ],
+        make_preset_options(current_lang),
+    )
+
+
+@app.callback(
     Output("date-range", "start_date"),
     Output("date-range", "end_date"),
     Input("range-radio", "value"),
@@ -510,18 +698,20 @@ def sync_date_range(range_value: str):
     Input("ticker-input", "value"),
     Input("date-range", "start_date"),
     Input("date-range", "end_date"),
+    Input("language-radio", "value"),
 )
-def update_dashboard(ticker: str, start_date: str, end_date: str):
+def update_dashboard(ticker: str, start_date: str, end_date: str, lang: str):
+    current_lang = lang if lang in I18N else "zh"
     ticker = (ticker or DEFAULT_TICKER).strip().upper()
     start = pd.to_datetime(start_date).date()
     end = pd.to_datetime(end_date).date()
 
     if start >= end:
-        return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), "Start date must be earlier than end date."
+        return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), t(current_lang, "invalid_date")
 
     df = load_data(ticker, start, end)
     if df.empty:
-        return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), "No data found. Check ticker or date range."
+        return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), t(current_lang, "no_data")
 
     latest_close = float(df["Close"].iloc[-1])
     latest_rsi = df["RSI"].iloc[-1]
@@ -531,13 +721,13 @@ def update_dashboard(ticker: str, start_date: str, end_date: str):
         daily_change = (df["Close"].iloc[-1] / df["Close"].iloc[-2] - 1) * 100
         daily_change_text = f"{daily_change:.2f}%"
     else:
-        daily_change_text = "N/A"
+        daily_change_text = t(current_lang, "not_available")
 
     cards = [
-        html.Div([html.Div("Latest Close", className="metric-title"), html.Div(f"{latest_close:.2f} HKD", className="metric-value")], className="card"),
-        html.Div([html.Div("Percentile in History", className="metric-title"), html.Div(f"{percentile:.2f}%", className="metric-value")], className="card"),
-        html.Div([html.Div("RSI(14)", className="metric-title"), html.Div("N/A" if pd.isna(latest_rsi) else f"{latest_rsi:.2f}", className="metric-value")], className="card"),
-        html.Div([html.Div("Daily Change", className="metric-title"), html.Div(daily_change_text, className="metric-value")], className="card"),
+        html.Div([html.Div(t(current_lang, "latest_close"), className="metric-title"), html.Div(f"{latest_close:.2f} HKD", className="metric-value")], className="card"),
+        html.Div([html.Div(t(current_lang, "percentile"), className="metric-title"), html.Div(f"{percentile:.2f}%", className="metric-value")], className="card"),
+        html.Div([html.Div("RSI(14)", className="metric-title"), html.Div(t(current_lang, "not_available") if pd.isna(latest_rsi) else f"{latest_rsi:.2f}", className="metric-value")], className="card"),
+        html.Div([html.Div(t(current_lang, "daily_change"), className="metric-title"), html.Div(daily_change_text, className="metric-value")], className="card"),
     ]
 
     yearly_stats = compute_yearly_stats(df)
@@ -545,13 +735,13 @@ def update_dashboard(ticker: str, start_date: str, end_date: str):
 
     return (
         cards,
-        make_price_figure(df, ticker),
-        make_rsi_figure(df),
-        make_yearly_band_figure(yearly_stats),
-        make_yearly_stats_table(yearly_stats),
-        make_drawdown_figure(drawdown, ticker),
-        make_drawdown_panel(drawdown_stats),
-        make_valuation_panel(ticker),
+        make_price_figure(df, ticker, current_lang),
+        make_rsi_figure(df, current_lang),
+        make_yearly_band_figure(yearly_stats, current_lang),
+        make_yearly_stats_table(yearly_stats, current_lang),
+        make_drawdown_figure(drawdown, ticker, current_lang),
+        make_drawdown_panel(drawdown_stats, current_lang),
+        make_valuation_panel(ticker, current_lang),
         "",
     )
 
