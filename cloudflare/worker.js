@@ -1,29 +1,27 @@
+const BACKEND_URL = "https://jstock-c2ctfydbgbcrhmf2.eastasia-01.azurewebsites.net";
+
 export default {
-  async fetch(request, env) {
-    // Cloudflare Workers cannot run a long-lived Dash/Flask server process directly.
-    // This worker can proxy traffic to a backend where app.py is running.
-    const backend = env.BACKEND_URL;
+  async fetch(request, env, ctx) {
+    const url = new URL(request.url);
+    const targetUrl = BACKEND_URL + url.pathname + url.search;
 
-    if (!backend) {
-      const message = [
-        "Cloudflare worker is configured.",
-        "Set BACKEND_URL in Cloudflare to proxy this endpoint to your running Dash backend.",
-        "Example:",
-        "wrangler secret put BACKEND_URL",
-      ].join("\n");
+    const backendRequest = new Request(targetUrl, {
+      method: request.method,
+      headers: request.headers,
+      body: ["GET", "HEAD"].includes(request.method) ? undefined : request.body,
+      redirect: "follow",
+    });
 
-      return new Response(message, {
-        status: 200,
-        headers: { "content-type": "text/plain; charset=UTF-8" },
-      });
-    }
+    const response = await fetch(backendRequest);
 
-    const incoming = new URL(request.url);
-    const target = new URL(backend);
-    target.pathname = incoming.pathname;
-    target.search = incoming.search;
+    // Pass through headers, fix CORS if needed
+    const newHeaders = new Headers(response.headers);
+    newHeaders.set("Access-Control-Allow-Origin", "*");
 
-    const proxiedRequest = new Request(target.toString(), request);
-    return fetch(proxiedRequest);
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: newHeaders,
+    });
   },
 };

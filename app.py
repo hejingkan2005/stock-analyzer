@@ -1,6 +1,5 @@
 from datetime import date, timedelta
 from functools import lru_cache
-import os
 
 import numpy as np
 import pandas as pd
@@ -98,10 +97,7 @@ def compute_yearly_stats(df: pd.DataFrame) -> pd.DataFrame:
     yearly_df = yearly_df.dropna(subset=["DailyReturn"])
 
     if yearly_df.empty:
-        return pd.DataFrame(columns=["Year", "AnnualReturn", "StdAllYears", "LowerBand", "UpperBand"])
-
-    # Use one annualized std computed from all daily returns in the selected history.
-    std_all_years = yearly_df["DailyReturn"].std(ddof=1) * np.sqrt(252) if len(yearly_df) > 1 else np.nan
+        return pd.DataFrame(columns=["Year", "AnnualReturn", "AnnualStd", "LowerBand", "UpperBand"])
 
     rows = []
     for year, group in yearly_df.groupby(yearly_df.index.year):
@@ -112,14 +108,15 @@ def compute_yearly_stats(df: pd.DataFrame) -> pd.DataFrame:
 
         total_return = (1 + daily_ret).prod() - 1
         annual_return = (1 + total_return) ** (252 / n) - 1
+        annual_std = daily_ret.std(ddof=1) * np.sqrt(252) if n > 1 else np.nan
 
         rows.append(
             {
                 "Year": int(year),
                 "AnnualReturn": float(annual_return),
-                "StdAllYears": float(std_all_years) if pd.notna(std_all_years) else np.nan,
-                "LowerBand": float(annual_return - std_all_years) if pd.notna(std_all_years) else np.nan,
-                "UpperBand": float(annual_return + std_all_years) if pd.notna(std_all_years) else np.nan,
+                "AnnualStd": float(annual_std) if pd.notna(annual_std) else np.nan,
+                "LowerBand": float(annual_return - annual_std) if pd.notna(annual_std) else np.nan,
+                "UpperBand": float(annual_return + annual_std) if pd.notna(annual_std) else np.nan,
             }
         )
 
@@ -192,7 +189,7 @@ def make_yearly_stats_table(yearly_stats: pd.DataFrame) -> html.Div:
             [
                 html.Th("Year"),
                 html.Th("Annualized Return"),
-                html.Th("Std (All Years)"),
+                html.Th("Std"),
                 html.Th("Volatility Range (Return-Std, Return+Std)"),
             ]
         )
@@ -201,7 +198,7 @@ def make_yearly_stats_table(yearly_stats: pd.DataFrame) -> html.Div:
     body_rows = []
     for _, row in yearly_stats.iterrows():
         annual_return = row["AnnualReturn"]
-        annual_std = row["StdAllYears"]
+        annual_std = row["AnnualStd"]
         lower = row["LowerBand"]
         upper = row["UpperBand"]
         range_text = "N/A" if pd.isna(lower) or pd.isna(upper) else f"{lower:.2%} ~ {upper:.2%}"
@@ -560,5 +557,4 @@ def update_dashboard(ticker: str, start_date: str, end_date: str):
 
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", "8050"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(debug=False)
