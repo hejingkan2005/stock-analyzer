@@ -76,7 +76,7 @@ I18N = {
         "rate_limited": "Yahoo Finance 当前返回频率限制（429 Too Many Requests）。这不是代码或股票代码错误，请稍后重试。",
         "tools_title": "计算工具",
         "toolbar_toggle": "工具栏",
-        "close": "关闭",
+        "close_tool": "关闭",
         "tool_annualized_name": "年化收益率计算器",
         "compound_calc_title": "复利收益率计算器",
         "calc_mode": "计算模式",
@@ -151,7 +151,7 @@ I18N = {
         "rate_limited": "Yahoo Finance is currently rate limiting requests (429 Too Many Requests). This is not a ticker or app logic error. Try again later.",
         "tools_title": "Calculation Tools",
         "toolbar_toggle": "Tools",
-        "close": "Close",
+        "close_tool": "Close",
         "tool_annualized_name": "Annualized Return Calculator",
         "compound_calc_title": "Compound Return Calculator",
         "calc_mode": "Calculation Mode",
@@ -643,7 +643,13 @@ sidebar_layout = html.Aside(
                 html.Div(
                     className="card calculator-card",
                     children=[
-                        html.H4(id="compound-calc-title"),
+                        html.Div(
+                            [
+                                html.H4(id="compound-calc-title"),
+                                html.Button(id="tool-close-btn", className="tool-close-btn"),
+                            ],
+                            className="calculator-header",
+                        ),
                         html.Div(id="calc-mode-title", className="metric-title"),
                         dcc.RadioItems(id="calc-mode-toggle", value="total_to_annualized", className="calc-mode-toggle"),
                         html.Div(id="compound-calc-hint", className="metric-title"),
@@ -653,13 +659,13 @@ sidebar_layout = html.Aside(
                                 html.Div(
                                     [
                                         html.Label(id="input-rate-title", className="calculator-label"),
-                                        dcc.Input(id="calc-rate-input", type="number", value=100, debounce=True, step=0.1, className="calculator-input"),
+                                        dcc.Input(id="calc-rate-input", type="number", value=100, debounce=True, step=1, className="calculator-input"),
                                     ]
                                 ),
                                 html.Div(
                                     [
                                         html.Label(id="input-years-title", className="calculator-label"),
-                                        dcc.Input(id="calc-years-input", type="number", value=3, debounce=True, step=0.1, min=0.1, className="calculator-input"),
+                                        dcc.Input(id="calc-years-input", type="number", value=3, debounce=True, step=1, min=1, className="calculator-input"),
                                     ]
                                 ),
                             ],
@@ -792,6 +798,7 @@ def sync_ticker_with_preset(preset_ticker: str):
     Output("date-title", "children"),
     Output("tool-annualized-btn", "children"),
     Output("compound-calc-title", "children"),
+    Output("tool-close-btn", "children"),
     Output("calc-mode-title", "children"),
     Output("calc-mode-toggle", "options"),
     Output("range-radio", "options"),
@@ -810,6 +817,7 @@ def update_static_text(lang: str):
         t(current_lang, "date_range"),
         t(current_lang, "tool_annualized_name"),
         t(current_lang, "compound_calc_title"),
+        t(current_lang, "close_tool"),
         t(current_lang, "calc_mode"),
         [
             {"label": t(current_lang, "mode_total_to_annualized"), "value": "total_to_annualized"},
@@ -830,11 +838,12 @@ def update_static_text(lang: str):
     Output("tool-sidebar-state", "data"),
     Input("toolbar-toggle-btn", "n_clicks"),
     Input("tool-annualized-btn", "n_clicks"),
+    Input("tool-close-btn", "n_clicks"),
     Input("sidebar-overlay", "n_clicks"),
     State("tool-sidebar-state", "data"),
     prevent_initial_call=True,
 )
-def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, overlay_clicks, state):
+def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, close_tool_clicks, overlay_clicks, state):
     sidebar_state = state or {"open": False, "selected": None}
     trigger = ctx.triggered_id
 
@@ -847,6 +856,9 @@ def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, overlay_clicks,
 
     if trigger == "tool-annualized-btn":
         return {"open": True, "selected": "annualized"}
+
+    if trigger == "tool-close-btn":
+        return {"open": True, "selected": None}
 
     return sidebar_state
 
