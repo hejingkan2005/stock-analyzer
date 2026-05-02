@@ -5,6 +5,8 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import yfinance as yf
+import yfinance.shared as yf_shared
+from yfinance.exceptions import YFRateLimitError
 from dash import Dash, Input, Output, dcc, html
 
 
@@ -71,6 +73,7 @@ I18N = {
         "ev_ebitda": "EV / EBITDA",
         "invalid_date": "开始日期必须早于结束日期。",
         "no_data": "未找到数据，请检查股票代码或日期范围。",
+        "rate_limited": "Yahoo Finance 当前返回频率限制（429 Too Many Requests）。这不是代码或股票代码错误，请稍后重试。",
         "preset_tencent": "腾讯香港 (0700.HK)",
         "preset_alibaba": "阿里香港 (9988.HK)",
     },
@@ -125,6 +128,7 @@ I18N = {
         "ev_ebitda": "EV / EBITDA",
         "invalid_date": "Start date must be earlier than end date.",
         "no_data": "No data found. Check ticker or date range.",
+        "rate_limited": "Yahoo Finance is currently rate limiting requests (429 Too Many Requests). This is not a ticker or app logic error. Try again later.",
         "preset_tencent": "Tencent HK (0700.HK)",
         "preset_alibaba": "Alibaba HK (9988.HK)",
     },
@@ -155,7 +159,8 @@ def compute_rsi(series: pd.Series, period: int = 14) -> pd.Series:
     return 100 - (100 / (1 + rs))
 
 
-def load_data(ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
+@lru_cache(maxsize=64)
+def _load_data_cached(ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
     df = yf.download(
         ticker,
         start=start_date,
@@ -163,6 +168,10 @@ def load_data(ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
         auto_adjust=False,
         progress=False,
     )
+
+    error_message = yf_shared._ERRORS.get(ticker.upper(), "")
+    if "YFRateLimitError" in error_message:
+        raise YFRateLimitError()
 
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
@@ -178,6 +187,46 @@ def load_data(ticker: str, start_date: date, end_date: date) -> pd.DataFrame:
     df["MA250"] = df["Close"].rolling(window=250).mean()
     df["RSI"] = compute_rsi(df["Close"], period=14)
     return df
+
+
+def load_data(ticker: str, start_date: date, end_date: date) -> tuple[pd.DataFrame, str | None]:
+    try:
+        return _load_data_cached(ticker, start_date, end_date).copy(), None
+    except YFRateLimitError:
+        return pd.DataFrame(), "rate_limit"
+    except Exception:
+        return pd.DataFrame(), "fetch_error"
+
+
+GRAPH_CONFIG = {
+    "displaylogo": False,
+    "displayModeBar": True,
+    "scrollZoom": False,
+    "doubleClick": "reset",
+    "modeBarButtonsToRemove": [
+        "zoom2d",
+        "pan2d",
+        "select2d",
+        "lasso2d",
+        "zoomIn2d",
+        "zoomOut2d",
+        "autoScale2d",
+        "hoverClosestCartesian",
+        "hoverCompareCartesian",
+        "toggleSpikelines",
+    ],
+}
+
+
+def make_graph(graph_id: str) -> dcc.Graph:
+    return dcc.Graph(id=graph_id, config=GRAPH_CONFIG)
+
+
+def finalize_figure(fig: go.Figure) -> go.Figure:
+    fig.update_layout(dragmode=False)
+    fig.update_xaxes(fixedrange=True)
+    fig.update_yaxes(fixedrange=True)
+    return fig
 
 
 def make_price_figure(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
@@ -198,7 +247,7 @@ def make_price_figure(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
         margin=dict(l=20, r=20, t=48, b=20),
     )
     fig.update_xaxes(rangeslider_visible=True)
-    return fig
+    return finalize_figure(fig)
 
 
 def make_rsi_figure(df: pd.DataFrame, lang: str) -> go.Figure:
@@ -216,7 +265,7 @@ def make_rsi_figure(df: pd.DataFrame, lang: str) -> go.Figure:
         yaxis=dict(range=[0, 100]),
         margin=dict(l=20, r=20, t=48, b=20),
     )
-    return fig
+    return finalize_figure(fig)
 
 
 def compute_yearly_stats(df: pd.DataFrame) -> pd.DataFrame:
@@ -262,7 +311,7 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame, lang: str) -> go.Figure:
             yaxis_title=t(lang, "rate"),
             margin=dict(l=20, r=20, t=48, b=20),
         )
-        return fig
+        return finalize_figure(fig)
 
     fig.add_trace(
         go.Scatter(
@@ -305,7 +354,7 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame, lang: str) -> go.Figure:
         margin=dict(l=20, r=20, t=48, b=20),
     )
     fig.update_yaxes(tickformat=".1%")
-    return fig
+    return finalize_figure(fig)
 
 
 def make_yearly_stats_table(yearly_stats: pd.DataFrame, lang: str) -> html.Div:
@@ -403,7 +452,7 @@ def make_drawdown_figure(drawdown: pd.Series, ticker: str, lang: str) -> go.Figu
             yaxis_title=t(lang, "drawdown"),
             margin=dict(l=20, r=20, t=48, b=20),
         )
-        return fig
+        return finalize_figure(fig)
 
     fig.add_trace(
         go.Scatter(
@@ -426,7 +475,7 @@ def make_drawdown_figure(drawdown: pd.Series, ticker: str, lang: str) -> go.Figu
         margin=dict(l=20, r=20, t=48, b=20),
     )
     fig.update_yaxes(tickformat=".1%")
-    return fig
+    return finalize_figure(fig)
 
 
 def make_drawdown_panel(drawdown_stats: dict, lang: str) -> html.Div:
@@ -609,15 +658,15 @@ app.layout = html.Div(
                     className="controls",
                 ),
                 html.Div(id="metrics", className="metrics"),
-                html.Div(className="card", children=[dcc.Graph(id="price-chart")]),
+                html.Div(className="card", children=[make_graph("price-chart")]),
                 html.Div(style={"height": "10px"}),
-                html.Div(className="card", children=[dcc.Graph(id="rsi-chart")]),
+                html.Div(className="card", children=[make_graph("rsi-chart")]),
                 html.Div(style={"height": "10px"}),
-                html.Div(className="card", children=[dcc.Graph(id="yearly-band-chart")]),
+                html.Div(className="card", children=[make_graph("yearly-band-chart")]),
                 html.Div(style={"height": "10px"}),
                 html.Div(className="card", id="yearly-stats-table"),
                 html.Div(style={"height": "10px"}),
-                html.Div(className="card", children=[dcc.Graph(id="drawdown-chart")]),
+                html.Div(className="card", children=[make_graph("drawdown-chart")]),
                 html.Div(style={"height": "10px"}),
                 html.Div(className="two-col-panels", children=[html.Div(className="card", id="drawdown-panel"), html.Div(className="card", id="valuation-panel")]),
                 html.Div(id="error-message", style={"color": "#b00020", "marginTop": "12px", "fontWeight": "600"}),
@@ -709,7 +758,10 @@ def update_dashboard(ticker: str, start_date: str, end_date: str, lang: str):
     if start >= end:
         return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), t(current_lang, "invalid_date")
 
-    df = load_data(ticker, start, end)
+    df, fetch_error = load_data(ticker, start, end)
+    if fetch_error == "rate_limit":
+        return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), t(current_lang, "rate_limited")
+
     if df.empty:
         return [], go.Figure(), go.Figure(), go.Figure(), html.Div(), go.Figure(), html.Div(), html.Div(), t(current_lang, "no_data")
 
