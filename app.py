@@ -7,7 +7,7 @@ import plotly.graph_objects as go
 import yfinance as yf
 import yfinance.shared as yf_shared
 from yfinance.exceptions import YFRateLimitError
-from dash import Dash, Input, Output, dcc, html
+from dash import Dash, Input, Output, State, ctx, dcc, html
 
 
 DEFAULT_TICKER = "0700.HK"
@@ -74,6 +74,26 @@ I18N = {
         "invalid_date": "开始日期必须早于结束日期。",
         "no_data": "未找到数据，请检查股票代码或日期范围。",
         "rate_limited": "Yahoo Finance 当前返回频率限制（429 Too Many Requests）。这不是代码或股票代码错误，请稍后重试。",
+        "tools_title": "计算工具",
+        "toolbar_toggle": "工具栏",
+        "close": "关闭",
+        "tool_annualized_name": "年化收益率工具",
+        "compound_calc_title": "复利收益率计算器",
+        "calc_mode": "计算模式",
+        "mode_total_to_annualized": "总收益率 + 年数 -> 年化收益率",
+        "mode_annualized_to_total": "年化收益率 + 年数 -> 总收益率",
+        "input_rate": "收益率 (%)",
+        "total_return": "总收益率 (%)",
+        "annualized_return_input": "年化收益率 (%)",
+        "holding_years": "持有年数",
+        "annualized_return_result": "年化收益率",
+        "total_return_result": "总收益率",
+        "compound_calc_hint": "计算公式: (1 + 总收益率)^(1/n) - 1",
+        "total_return_calc_hint": "计算公式: (1 + 年化收益率)^n - 1",
+        "compound_calc_invalid": "请输入大于 -100% 的总收益率，以及大于 0 的持有年数。",
+        "total_return_calc_invalid": "请输入大于 -100% 的年化收益率，以及大于 0 的持有年数。",
+        "compound_calc_empty": "输入总收益率和持有年数后，这里会显示年化收益率。",
+        "total_return_calc_empty": "输入年化收益率和持有年数后，这里会显示总收益率。",
         "preset_tencent": "腾讯香港 (0700.HK)",
         "preset_alibaba": "阿里香港 (9988.HK)",
     },
@@ -129,6 +149,26 @@ I18N = {
         "invalid_date": "Start date must be earlier than end date.",
         "no_data": "No data found. Check ticker or date range.",
         "rate_limited": "Yahoo Finance is currently rate limiting requests (429 Too Many Requests). This is not a ticker or app logic error. Try again later.",
+        "tools_title": "Calculation Tools",
+        "toolbar_toggle": "Tools",
+        "close": "Close",
+        "tool_annualized_name": "Annualized Return Tool",
+        "compound_calc_title": "Compound Return Calculator",
+        "calc_mode": "Calculation Mode",
+        "mode_total_to_annualized": "Total Return + Years -> Annualized Return",
+        "mode_annualized_to_total": "Annualized Return + Years -> Total Return",
+        "input_rate": "Return (%)",
+        "total_return": "Total Return (%)",
+        "annualized_return_input": "Annualized Return (%)",
+        "holding_years": "Holding Years",
+        "annualized_return_result": "Annualized Return",
+        "total_return_result": "Total Return",
+        "compound_calc_hint": "Formula: (1 + total return)^(1/n) - 1",
+        "total_return_calc_hint": "Formula: (1 + annualized return)^n - 1",
+        "compound_calc_invalid": "Enter a total return greater than -100% and a holding period greater than 0.",
+        "total_return_calc_invalid": "Enter an annualized return greater than -100% and a holding period greater than 0.",
+        "compound_calc_empty": "Enter total return and holding years to see the annualized return.",
+        "total_return_calc_empty": "Enter annualized return and holding years to see the total return.",
         "preset_tencent": "Tencent HK (0700.HK)",
         "preset_alibaba": "Alibaba HK (9988.HK)",
     },
@@ -227,6 +267,16 @@ def finalize_figure(fig: go.Figure) -> go.Figure:
     fig.update_xaxes(fixedrange=True)
     fig.update_yaxes(fixedrange=True)
     return fig
+
+
+def compute_annualized_return(total_return_pct: float, years: float) -> float:
+    total_return = total_return_pct / 100
+    return (1 + total_return) ** (1 / years) - 1
+
+
+def compute_total_return(annualized_return_pct: float, years: float) -> float:
+    annualized_return = annualized_return_pct / 100
+    return (1 + annualized_return) ** years - 1
 
 
 def make_price_figure(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
@@ -573,107 +623,155 @@ server = app.server
 today = date.today()
 default_start = today - timedelta(days=365 * 5)
 
-app.layout = html.Div(
+sidebar_layout = html.Aside(
+    [
+        html.Div(
+            [
+                html.Div(id="tools-title", className="sidebar-title"),
+                html.Button(id="sidebar-close-btn", className="sidebar-close-btn"),
+            ],
+            className="sidebar-header",
+        ),
+        html.Div(
+            id="tool-menu",
+            className="tool-menu",
+            children=[html.Button(id="tool-annualized-btn", className="tool-menu-btn")],
+        ),
+        html.Div(
+            id="sidebar-tool-content",
+            className="tool-grid",
+            children=[
+                html.Div(
+                    className="card calculator-card",
+                    children=[
+                        html.H4(id="compound-calc-title"),
+                        html.Div(id="calc-mode-title", className="metric-title"),
+                        dcc.RadioItems(id="calc-mode-toggle", value="total_to_annualized", className="calc-mode-toggle"),
+                        html.Div(id="compound-calc-hint", className="metric-title"),
+                        html.Div(
+                            className="calculator-form",
+                            children=[
+                                html.Div(
+                                    [
+                                        html.Label(id="input-rate-title", className="calculator-label"),
+                                        dcc.Input(id="calc-rate-input", type="number", value=100, debounce=True, step=0.1, className="calculator-input"),
+                                    ]
+                                ),
+                                html.Div(
+                                    [
+                                        html.Label(id="input-years-title", className="calculator-label"),
+                                        dcc.Input(id="calc-years-input", type="number", value=3, debounce=True, step=0.1, min=0.1, className="calculator-input"),
+                                    ]
+                                ),
+                            ],
+                        ),
+                        html.Div(id="calc-result", className="calculator-result"),
+                    ],
+                )
+            ],
+        ),
+    ],
+    id="sidebar",
+    className="sidebar sidebar-collapsed",
+)
+
+main_page_layout = html.Div(
     [
         html.Div(
             [
                 html.Div(
                     [
-                        html.Div(
-                            [
-                                html.H2(id="header-title", style={"margin": "0 0 6px 0"}),
-                                html.Div(id="header-subtitle"),
-                            ],
-                            className="header-main",
-                        ),
-                        html.Div(
-                            [
-                                html.Span("🌐", className="lang-icon"),
-                                dcc.RadioItems(
-                                    id="language-radio",
-                                    options=LANGUAGES,
-                                    value="zh",
-                                    inline=True,
-                                    className="lang-radio",
-                                ),
-                            ],
-                            className="header-lang",
-                        ),
+                        html.H2(id="header-title", style={"margin": "0 0 6px 0"}),
+                        html.Div(id="header-subtitle"),
                     ],
-                    className="header",
+                    className="header-main",
                 ),
                 html.Div(
                     [
-                        html.Div(
-                            [
-                                html.Div(id="preset-title", className="metric-title"),
-                                dcc.Dropdown(
-                                    id="preset-stock",
-                                    options=make_preset_options("zh"),
-                                    value=DEFAULT_TICKER,
-                                    clearable=False,
-                                ),
+                        html.Span("🌐", className="lang-icon"),
+                        dcc.RadioItems(id="language-radio", options=LANGUAGES, value="zh", inline=True, className="lang-radio"),
+                    ],
+                    className="header-lang",
+                ),
+            ],
+            className="header",
+        ),
+        html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div(id="preset-title", className="metric-title"),
+                        dcc.Dropdown(id="preset-stock", options=make_preset_options("zh"), value=DEFAULT_TICKER, clearable=False),
+                    ],
+                    className="card",
+                ),
+                html.Div(
+                    [
+                        html.Div(id="ticker-title", className="metric-title"),
+                        dcc.Input(id="ticker-input", type="text", value=DEFAULT_TICKER, debounce=True, style={"width": "100%", "padding": "8px", "fontSize": "16px"}),
+                    ],
+                    className="card",
+                ),
+                html.Div(
+                    [
+                        html.Div(id="range-title", className="metric-title"),
+                        dcc.RadioItems(
+                            id="range-radio",
+                            options=[
+                                {"label": "1M", "value": "1M"},
+                                {"label": "3M", "value": "3M"},
+                                {"label": "6M", "value": "6M"},
+                                {"label": "1Y", "value": "1Y"},
+                                {"label": "5Y", "value": "5Y"},
                             ],
-                            className="card",
-                        ),
-                        html.Div(
-                            [
-                                html.Div(id="ticker-title", className="metric-title"),
-                                dcc.Input(id="ticker-input", type="text", value=DEFAULT_TICKER, debounce=True, style={"width": "100%", "padding": "8px", "fontSize": "16px"}),
-                            ],
-                            className="card",
-                        ),
-                        html.Div(
-                            [
-                                html.Div(id="range-title", className="metric-title"),
-                                dcc.RadioItems(
-                                    id="range-radio",
-                                    options=[
-                                        {"label": "1M", "value": "1M"},
-                                        {"label": "3M", "value": "3M"},
-                                        {"label": "6M", "value": "6M"},
-                                        {"label": "1Y", "value": "1Y"},
-                                        {"label": "5Y", "value": "5Y"},
-                                    ],
-                                    value="5Y",
-                                    inline=True,
-                                    labelStyle={"marginRight": "10px"},
-                                ),
-                            ],
-                            className="card",
-                        ),
-                        html.Div(
-                            [
-                                html.Div(id="date-title", className="metric-title"),
-                                dcc.DatePickerRange(
-                                    id="date-range",
-                                    start_date=default_start,
-                                    end_date=today,
-                                    display_format="YYYY-MM-DD",
-                                ),
-                            ],
-                            className="card",
+                            value="5Y",
+                            inline=True,
+                            labelStyle={"marginRight": "10px"},
                         ),
                     ],
-                    className="controls",
+                    className="card",
                 ),
-                html.Div(id="metrics", className="metrics"),
-                html.Div(className="card", children=[make_graph("price-chart")]),
-                html.Div(style={"height": "10px"}),
-                html.Div(className="card", children=[make_graph("rsi-chart")]),
-                html.Div(style={"height": "10px"}),
-                html.Div(className="card", children=[make_graph("yearly-band-chart")]),
-                html.Div(style={"height": "10px"}),
-                html.Div(className="card", id="yearly-stats-table"),
-                html.Div(style={"height": "10px"}),
-                html.Div(className="card", children=[make_graph("drawdown-chart")]),
-                html.Div(style={"height": "10px"}),
-                html.Div(className="two-col-panels", children=[html.Div(className="card", id="drawdown-panel"), html.Div(className="card", id="valuation-panel")]),
-                html.Div(id="error-message", style={"color": "#b00020", "marginTop": "12px", "fontWeight": "600"}),
+                html.Div(
+                    [
+                        html.Div(id="date-title", className="metric-title"),
+                        dcc.DatePickerRange(id="date-range", start_date=default_start, end_date=today, display_format="YYYY-MM-DD"),
+                    ],
+                    className="card",
+                ),
             ],
-            className="page",
+            className="controls",
         ),
-    ]
+        html.Div(id="metrics", className="metrics"),
+        html.Div(className="card", children=[make_graph("price-chart")]),
+        html.Div(style={"height": "10px"}),
+        html.Div(className="card", children=[make_graph("rsi-chart")]),
+        html.Div(style={"height": "10px"}),
+        html.Div(className="card", children=[make_graph("yearly-band-chart")]),
+        html.Div(style={"height": "10px"}),
+        html.Div(className="card", id="yearly-stats-table"),
+        html.Div(style={"height": "10px"}),
+        html.Div(className="card", children=[make_graph("drawdown-chart")]),
+        html.Div(style={"height": "10px"}),
+        html.Div(className="two-col-panels", children=[html.Div(className="card", id="drawdown-panel"), html.Div(className="card", id="valuation-panel")]),
+        html.Div(id="error-message", style={"color": "#b00020", "marginTop": "12px", "fontWeight": "600"}),
+    ],
+    className="page",
+)
+
+app.layout = html.Div(
+    [
+        dcc.Store(id="tool-sidebar-state", data={"open": False, "selected": None}),
+        html.Button(id="toolbar-toggle-btn", className="toolbar-toggle-btn"),
+        html.Div(id="sidebar-overlay", className="sidebar-overlay"),
+        html.Div(
+            [
+                html.Div([sidebar_layout], className="left-panel"),
+                html.Div([main_page_layout], className="right-panel"),
+            ],
+            id="app-shell",
+            className="app-shell sidebar-closed",
+        ),
+    ],
 )
 
 
@@ -688,10 +786,17 @@ def sync_ticker_with_preset(preset_ticker: str):
 @app.callback(
     Output("header-title", "children"),
     Output("header-subtitle", "children"),
+    Output("toolbar-toggle-btn", "children"),
     Output("preset-title", "children"),
     Output("ticker-title", "children"),
     Output("range-title", "children"),
     Output("date-title", "children"),
+    Output("tools-title", "children"),
+    Output("sidebar-close-btn", "children"),
+    Output("tool-annualized-btn", "children"),
+    Output("compound-calc-title", "children"),
+    Output("calc-mode-title", "children"),
+    Output("calc-mode-toggle", "options"),
     Output("range-radio", "options"),
     Output("preset-stock", "options"),
     Input("language-radio", "value"),
@@ -701,10 +806,20 @@ def update_static_text(lang: str):
     return (
         t(current_lang, "header_title"),
         t(current_lang, "header_subtitle"),
+        t(current_lang, "toolbar_toggle"),
         t(current_lang, "preset_stock"),
         t(current_lang, "ticker"),
         t(current_lang, "quick_range"),
         t(current_lang, "date_range"),
+        t(current_lang, "tools_title"),
+        t(current_lang, "close"),
+        t(current_lang, "tool_annualized_name"),
+        t(current_lang, "compound_calc_title"),
+        t(current_lang, "calc_mode"),
+        [
+            {"label": t(current_lang, "mode_total_to_annualized"), "value": "total_to_annualized"},
+            {"label": t(current_lang, "mode_annualized_to_total"), "value": "annualized_to_total"},
+        ],
         [
             {"label": "1月" if current_lang == "zh" else "1M", "value": "1M"},
             {"label": "3月" if current_lang == "zh" else "3M", "value": "3M"},
@@ -714,6 +829,123 @@ def update_static_text(lang: str):
         ],
         make_preset_options(current_lang),
     )
+
+
+@app.callback(
+    Output("tool-sidebar-state", "data"),
+    Input("toolbar-toggle-btn", "n_clicks"),
+    Input("sidebar-close-btn", "n_clicks"),
+    Input("tool-annualized-btn", "n_clicks"),
+    Input("sidebar-overlay", "n_clicks"),
+    State("tool-sidebar-state", "data"),
+    prevent_initial_call=True,
+)
+def update_tool_sidebar_state(toolbar_clicks, close_clicks, annualized_clicks, overlay_clicks, state):
+    sidebar_state = state or {"open": False, "selected": None}
+    trigger = ctx.triggered_id
+
+    if trigger == "toolbar-toggle-btn":
+        is_open = not bool(sidebar_state.get("open"))
+        return {"open": is_open, "selected": sidebar_state.get("selected") if is_open else None}
+
+    if trigger in {"sidebar-close-btn", "sidebar-overlay"}:
+        return {"open": False, "selected": None}
+
+    if trigger == "tool-annualized-btn":
+        return {"open": True, "selected": "annualized"}
+
+    return sidebar_state
+
+
+@app.callback(
+    Output("app-shell", "className"),
+    Output("sidebar", "className"),
+    Output("sidebar-overlay", "className"),
+    Output("tool-menu", "style"),
+    Output("sidebar-tool-content", "style"),
+    Input("tool-sidebar-state", "data"),
+)
+def render_tool_sidebar(state):
+    sidebar_state = state or {"open": False, "selected": None}
+    is_open = bool(sidebar_state.get("open"))
+    selected = sidebar_state.get("selected")
+
+    if not is_open:
+        return (
+            "app-shell sidebar-closed",
+            "sidebar sidebar-collapsed",
+            "sidebar-overlay",
+            {"display": "none"},
+            {"display": "none"},
+        )
+
+    menu_style = {"display": "grid"}
+    content_style = {"display": "none"}
+
+    if selected == "annualized":
+        content_style = {"display": "grid"}
+
+    return (
+        "app-shell sidebar-open",
+        "sidebar sidebar-expanded",
+        "sidebar-overlay active",
+        menu_style,
+        content_style,
+    )
+
+
+@app.callback(
+    Output("compound-calc-hint", "children"),
+    Output("input-rate-title", "children"),
+    Output("input-years-title", "children"),
+    Output("calc-result", "children"),
+    Input("calc-mode-toggle", "value"),
+    Input("calc-rate-input", "value"),
+    Input("calc-years-input", "value"),
+    Input("language-radio", "value"),
+)
+def update_compound_calculator(mode: str, rate_pct: float | None, years: float | None, lang: str):
+    current_lang = lang if lang in I18N else "zh"
+    active_mode = mode if mode in {"total_to_annualized", "annualized_to_total"} else "total_to_annualized"
+
+    if active_mode == "annualized_to_total":
+        hint = t(current_lang, "total_return_calc_hint")
+        rate_label = t(current_lang, "annualized_return_input")
+        if rate_pct is None or years is None:
+            result = html.Div(t(current_lang, "total_return_calc_empty"), className="metric-title")
+            return hint, rate_label, t(current_lang, "holding_years"), result
+
+        if rate_pct <= -100 or years <= 0:
+            result = html.Div(t(current_lang, "total_return_calc_invalid"), className="calculator-error")
+            return hint, rate_label, t(current_lang, "holding_years"), result
+
+        total_return = compute_total_return(float(rate_pct), float(years))
+        result = html.Div(
+            [
+                html.Div(t(current_lang, "total_return_result"), className="metric-title"),
+                html.Div(f"{total_return:.2%}", className="metric-value"),
+            ]
+        )
+        return hint, rate_label, t(current_lang, "holding_years"), result
+
+    hint = t(current_lang, "compound_calc_hint")
+    rate_label = t(current_lang, "total_return")
+    if rate_pct is None or years is None:
+        result = html.Div(t(current_lang, "compound_calc_empty"), className="metric-title")
+        return hint, rate_label, t(current_lang, "holding_years"), result
+
+    if rate_pct <= -100 or years <= 0:
+        result = html.Div(t(current_lang, "compound_calc_invalid"), className="calculator-error")
+        return hint, rate_label, t(current_lang, "holding_years"), result
+
+    annualized_return = compute_annualized_return(float(rate_pct), float(years))
+    result = html.Div(
+        [
+            html.Div(t(current_lang, "annualized_return_result"), className="metric-title"),
+            html.Div(f"{annualized_return:.2%}", className="metric-value"),
+        ]
+    )
+    return hint, rate_label, t(current_lang, "holding_years"), result
 
 
 @app.callback(

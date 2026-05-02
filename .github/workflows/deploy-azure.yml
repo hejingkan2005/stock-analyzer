@@ -17,8 +17,14 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dependencies
-        run: pip install -r requirements.txt
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v3
+
+      - name: Sync dependencies with uv
+        run: uv sync --locked
+
+      - name: Export dependencies for Azure build
+        run: uv export --format requirements-txt --no-hashes --output-file requirements.txt
 
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
