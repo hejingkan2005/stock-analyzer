@@ -77,7 +77,7 @@ I18N = {
         "tools_title": "计算工具",
         "toolbar_toggle": "工具栏",
         "close": "关闭",
-        "tool_annualized_name": "年化收益率工具",
+        "tool_annualized_name": "年化收益率计算器",
         "compound_calc_title": "复利收益率计算器",
         "calc_mode": "计算模式",
         "mode_total_to_annualized": "总收益率 + 年数 -> 年化收益率",
@@ -152,7 +152,7 @@ I18N = {
         "tools_title": "Calculation Tools",
         "toolbar_toggle": "Tools",
         "close": "Close",
-        "tool_annualized_name": "Annualized Return Tool",
+        "tool_annualized_name": "Annualized Return Calculator",
         "compound_calc_title": "Compound Return Calculator",
         "calc_mode": "Calculation Mode",
         "mode_total_to_annualized": "Total Return + Years -> Annualized Return",
@@ -257,13 +257,21 @@ GRAPH_CONFIG = {
     ],
 }
 
+TOP_RIGHT_LEGEND = {
+    "orientation": "h",
+    "yanchor": "bottom",
+    "y": 1.02,
+    "xanchor": "center",
+    "x": 0.5,
+}
+
 
 def make_graph(graph_id: str) -> dcc.Graph:
     return dcc.Graph(id=graph_id, config=GRAPH_CONFIG)
 
 
 def finalize_figure(fig: go.Figure) -> go.Figure:
-    fig.update_layout(dragmode=False)
+    fig.update_layout(dragmode=False, legend=TOP_RIGHT_LEGEND)
     fig.update_xaxes(fixedrange=True)
     fig.update_yaxes(fixedrange=True)
     return fig
@@ -293,7 +301,6 @@ def make_price_figure(df: pd.DataFrame, ticker: str, lang: str) -> go.Figure:
         hovermode="x unified",
         xaxis_title=t(lang, "date"),
         yaxis_title=t(lang, "price_hkd"),
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=20, r=20, t=48, b=20),
     )
     fig.update_xaxes(rangeslider_visible=True)
@@ -400,7 +407,6 @@ def make_yearly_band_figure(yearly_stats: pd.DataFrame, lang: str) -> go.Figure:
         xaxis_title=t(lang, "year"),
         yaxis_title=t(lang, "rate"),
         hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="left", x=0),
         margin=dict(l=20, r=20, t=48, b=20),
     )
     fig.update_yaxes(tickformat=".1%")
@@ -626,13 +632,6 @@ default_start = today - timedelta(days=365 * 5)
 sidebar_layout = html.Aside(
     [
         html.Div(
-            [
-                html.Div(id="tools-title", className="sidebar-title"),
-                html.Button(id="sidebar-close-btn", className="sidebar-close-btn"),
-            ],
-            className="sidebar-header",
-        ),
-        html.Div(
             id="tool-menu",
             className="tool-menu",
             children=[html.Button(id="tool-annualized-btn", className="tool-menu-btn")],
@@ -791,8 +790,6 @@ def sync_ticker_with_preset(preset_ticker: str):
     Output("ticker-title", "children"),
     Output("range-title", "children"),
     Output("date-title", "children"),
-    Output("tools-title", "children"),
-    Output("sidebar-close-btn", "children"),
     Output("tool-annualized-btn", "children"),
     Output("compound-calc-title", "children"),
     Output("calc-mode-title", "children"),
@@ -811,8 +808,6 @@ def update_static_text(lang: str):
         t(current_lang, "ticker"),
         t(current_lang, "quick_range"),
         t(current_lang, "date_range"),
-        t(current_lang, "tools_title"),
-        t(current_lang, "close"),
         t(current_lang, "tool_annualized_name"),
         t(current_lang, "compound_calc_title"),
         t(current_lang, "calc_mode"),
@@ -834,13 +829,12 @@ def update_static_text(lang: str):
 @app.callback(
     Output("tool-sidebar-state", "data"),
     Input("toolbar-toggle-btn", "n_clicks"),
-    Input("sidebar-close-btn", "n_clicks"),
     Input("tool-annualized-btn", "n_clicks"),
     Input("sidebar-overlay", "n_clicks"),
     State("tool-sidebar-state", "data"),
     prevent_initial_call=True,
 )
-def update_tool_sidebar_state(toolbar_clicks, close_clicks, annualized_clicks, overlay_clicks, state):
+def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, overlay_clicks, state):
     sidebar_state = state or {"open": False, "selected": None}
     trigger = ctx.triggered_id
 
@@ -848,7 +842,7 @@ def update_tool_sidebar_state(toolbar_clicks, close_clicks, annualized_clicks, o
         is_open = not bool(sidebar_state.get("open"))
         return {"open": is_open, "selected": sidebar_state.get("selected") if is_open else None}
 
-    if trigger in {"sidebar-close-btn", "sidebar-overlay"}:
+    if trigger == "sidebar-overlay":
         return {"open": False, "selected": None}
 
     if trigger == "tool-annualized-btn":

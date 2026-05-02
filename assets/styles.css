@@ -126,16 +126,38 @@ body {
     margin-bottom: 10px;
 }
 
+.tool-group-title {
+    margin: 2px 2px 8px;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+}
+
 .tool-menu-btn {
     width: 100%;
     text-align: left;
     border: 1px solid rgba(11, 79, 108, 0.2);
     border-radius: 11px;
-    padding: 10px 12px;
+    padding: 10px 12px 10px 18px;
     background: #ffffff;
     color: #1d3f55;
     font-weight: 700;
     cursor: pointer;
+    position: relative;
+}
+
+.tool-menu-btn::before {
+    content: "";
+    position: absolute;
+    left: 8px;
+    top: 50%;
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: #1d3f55;
+    transform: translateY(-50%);
 }
 
 .tool-menu-btn:hover {
