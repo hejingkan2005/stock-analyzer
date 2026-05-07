@@ -1197,6 +1197,13 @@ def _render_chat_messages(history: list[dict], lang: str) -> list:
 
 
 def _call_agent_service(service_url: str, history: list[dict], lang: str) -> str:
+    # When deployed inside the same Function App as agent_service (or any
+    # environment where AGENT_INPROCESS=1), call the agent directly in-process.
+    # This avoids an outbound HTTPS hop back to our own host, which Azure
+    # Functions doesn't reliably allow (manifests as a connect error).
+    if _should_call_inprocess():
+        return _call_agent_inprocess(history, lang)
+
     payload = json.dumps({"messages": history, "lang": lang}).encode("utf-8")
     url = service_url.rstrip("/") + "/chat"
     req = urllib.request.Request(
@@ -1209,6 +1216,32 @@ def _call_agent_service(service_url: str, history: list[dict], lang: str) -> str
         body = resp.read().decode("utf-8")
     data = json.loads(body)
     return str(data.get("reply") or "")
+
+
+def _should_call_inprocess() -> bool:
+    flag = os.getenv("AGENT_INPROCESS")
+    if flag is not None:
+        return flag.strip().lower() not in ("0", "false", "no", "")
+    # Auto-enable on Azure App Service / Functions where the agent ships in
+    # the same package and there is no separate uvicorn process.
+    return bool(os.getenv("WEBSITE_HOSTNAME"))
+
+
+_inprocess_agent = None
+
+
+def _get_inprocess_agent():
+    global _inprocess_agent
+    if _inprocess_agent is None:
+        from agent_service.adapters import build_agent  # local import: optional dep
+
+        _inprocess_agent = build_agent()
+    return _inprocess_agent
+
+
+def _call_agent_inprocess(history: list[dict], lang: str) -> str:
+    agent = _get_inprocess_agent()
+    return str(agent.run(history, lang) or "")
 
 
 @app.callback(
