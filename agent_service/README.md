@@ -69,9 +69,34 @@ and restart.
 
 ## Run
 
+Two ways to run locally:
+
+### A) Two-process (default)
+
+The Dash app talks to the agent over HTTP, like a real microservice:
+
 ```powershell
+# Terminal 1 — agent
 uv run --extra agent uvicorn agent_service.main:app --port 8765
+
+# Terminal 2 — Dash
+uv run python app.py
 ```
+
+### B) In-process (simulates Azure)
+
+Skip uvicorn entirely. The Dash callback imports `agent_service.adapters`
+and calls the agent in the same Python process — exactly how it runs on
+Azure Functions. Useful for reproducing production behavior or for a quick
+single-terminal setup:
+
+```powershell
+$env:AGENT_INPROCESS = "1"
+uv run --extra agent python app.py
+```
+
+`AGENT_INPROCESS` is auto-enabled on Azure (when `WEBSITE_HOSTNAME` is set);
+forcing it to `1` locally turns it on, `0` turns it off.
 
 Smoke test:
 
