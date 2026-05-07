@@ -120,6 +120,44 @@ class DexterAgent:
                 ) from exc
 
         self._agent_cls = DexterAgentCls
+        self._patch_dexter_writable_paths()
+
+    @staticmethod
+    def _patch_dexter_writable_paths() -> None:
+        """Redirect dexter's on-disk caches to a writable directory.
+
+        Dexter writes to ``./.dexter/settings.json`` and ``./.dexter/context/``
+        relative to the process CWD. On Azure Functions / App Service the
+        package directory is read-only, so we point both at a writable temp
+        path (``DEXTER_HOME`` if set, otherwise ``$TMPDIR/dexter``).
+        """
+        import tempfile
+        from pathlib import Path
+
+        base_dir = Path(os.getenv("DEXTER_HOME") or os.path.join(tempfile.gettempdir(), "dexter"))
+        try:
+            base_dir.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return  # if even tmp is unwritable, let dexter fail loudly later
+
+        try:
+            import dexter.utils.config as _cfg  # type: ignore
+            import dexter.utils.context as _ctx  # type: ignore
+
+            _cfg.SETTINGS_FILE = base_dir / "settings.json"
+
+            _orig_init = _ctx.ContextManager.__init__
+
+            def _patched_init(self, context_dir: str = str(base_dir / "context"), *args, **kwargs):  # type: ignore[no-untyped-def]
+                # Force the context directory to live under our writable base
+                # regardless of the caller-supplied path.
+                _orig_init(self, context_dir=str(base_dir / "context"), *args, **kwargs)
+
+            _ctx.ContextManager.__init__ = _patched_init  # type: ignore[assignment]
+        except Exception:
+            # If the internal layout changed, just leave defaults; the
+            # original FileSystem error will surface in the user's reply.
+            pass
 
     def run(self, messages: list[ChatMessage], lang: str) -> str:
         del lang  # dexter does not accept a language hint; set it in the query if needed.
