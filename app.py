@@ -1,4 +1,9 @@
 from datetime import date, timedelta
+import json
+import os
+import socket
+import urllib.error
+import urllib.request
 from functools import lru_cache
 
 import numpy as np
@@ -7,7 +12,26 @@ import plotly.graph_objects as go
 import yfinance as yf
 import yfinance.shared as yf_shared
 from yfinance.exceptions import YFRateLimitError
-from dash import Dash, Input, Output, State, ctx, dcc, html
+from dash import Dash, Input, Output, State, ctx, dcc, html, no_update
+
+# URL of the chat agent microservice (see agent_service/README.md).
+# Override at runtime via the AGENT_SERVICE_URL environment variable or via
+# the input field in the chat sidebar tab.
+def _resolve_agent_service_url() -> str:
+    explicit = os.getenv("AGENT_SERVICE_URL")
+    if explicit:
+        return explicit.rstrip("/")
+    # When deployed on Azure App Service / Functions, call ourselves via the
+    # public hostname under the /agent prefix exposed by function_app.py.
+    host = os.getenv("WEBSITE_HOSTNAME")
+    if host:
+        return f"https://{host}/agent"
+    return "http://localhost:8765"
+
+
+DEFAULT_AGENT_SERVICE_URL = _resolve_agent_service_url()
+AGENT_REQUEST_TIMEOUT_SEC = float(os.getenv("AGENT_REQUEST_TIMEOUT_SEC", "300"))
+MAX_CHAT_HISTORY = 40
 
 
 DEFAULT_TICKER = "0700.HK"
@@ -96,6 +120,19 @@ I18N = {
         "total_return_calc_empty": "输入年化收益率和持有年数后，这里会显示总收益率。",
         "preset_tencent": "腾讯香港 (0700.HK)",
         "preset_alibaba": "阿里香港 (9988.HK)",
+        "tool_chat_name": "聊天助手",
+        "chat_title": "聊天助手",
+        "chat_intro": "向智能体提问股票/财务相关问题。",
+        "chat_input_placeholder": "输入你的问题，例如：腾讯最近一季的营收是多少？",
+        "chat_send": "发送",
+        "chat_clear": "清空对话",
+        "chat_empty": "还没有对话。在下方输入问题开始。",
+        "chat_thinking": "智能体思考中…",
+        "chat_role_user": "我",
+        "chat_role_assistant": "助手",
+        "chat_error_network": "无法连接智能体服务，请确认服务正在运行。",
+        "chat_error_timeout": "智能体响应超时（>{sec}s）。请稍后重试或换个更具体的问题（例如指定股票代码 TCEHY、AAPL）。也可调高 AGENT_REQUEST_TIMEOUT_SEC 环境变量。",
+        "chat_error_generic": "调用智能体时出错",
     },
     "en": {
         "header_title": "HK Stock Analysis Dashboard",
@@ -171,6 +208,19 @@ I18N = {
         "total_return_calc_empty": "Enter annualized return and holding years to see the total return.",
         "preset_tencent": "Tencent HK (0700.HK)",
         "preset_alibaba": "Alibaba HK (9988.HK)",
+        "tool_chat_name": "Chat Assistant",
+        "chat_title": "Chat Assistant",
+        "chat_intro": "Ask the agent about stocks or financials.",
+        "chat_input_placeholder": "Type your question, e.g. What was Tencent's latest quarterly revenue?",
+        "chat_send": "Send",
+        "chat_clear": "Clear",
+        "chat_empty": "No messages yet. Type a question below to start.",
+        "chat_thinking": "Agent is thinking…",
+        "chat_role_user": "You",
+        "chat_role_assistant": "Assistant",
+        "chat_error_network": "Could not reach the agent service. Make sure it is running.",
+        "chat_error_timeout": "Agent timed out (>{sec}s). Try again later or ask a more specific question (e.g. provide a US ticker like TCEHY or AAPL). You can also raise the AGENT_REQUEST_TIMEOUT_SEC env var.",
+        "chat_error_generic": "Agent call failed",
     },
 }
 
@@ -634,13 +684,17 @@ sidebar_layout = html.Aside(
         html.Div(
             id="tool-menu",
             className="tool-menu",
-            children=[html.Button(id="tool-annualized-btn", className="tool-menu-btn")],
+            children=[
+                html.Button(id="tool-annualized-btn", className="tool-menu-btn"),
+                html.Button(id="tool-chat-btn", className="tool-menu-btn"),
+            ],
         ),
         html.Div(
             id="sidebar-tool-content",
             className="tool-grid",
             children=[
                 html.Div(
+                    id="calculator-card",
                     className="card calculator-card",
                     children=[
                         html.Div(
@@ -672,7 +726,44 @@ sidebar_layout = html.Aside(
                         ),
                         html.Div(id="calc-result", className="calculator-result"),
                     ],
-                )
+                ),
+                html.Div(
+                    id="chat-card",
+                    className="card chat-card",
+                    children=[
+                        html.Div(
+                            [
+                                html.H4(id="chat-title"),
+                                html.Button(id="tool-chat-close-btn", className="tool-close-btn"),
+                            ],
+                            className="calculator-header",
+                        ),
+                        html.Div(id="chat-intro", className="metric-title"),
+                        dcc.Loading(
+                            id="chat-loading",
+                            type="dot",
+                            children=html.Div(id="chat-messages", className="chat-messages"),
+                        ),
+                        html.Div(
+                            className="chat-input-row",
+                            children=[
+                                dcc.Textarea(
+                                    id="chat-input",
+                                    value="",
+                                    className="chat-input",
+                                    rows=2,
+                                ),
+                                html.Div(
+                                    className="chat-buttons",
+                                    children=[
+                                        html.Button(id="chat-send-btn", n_clicks=0, className="chat-send-btn"),
+                                        html.Button(id="chat-clear-btn", n_clicks=0, className="chat-clear-btn"),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    ],
+                ),
             ],
         ),
     ],
@@ -766,6 +857,8 @@ main_page_layout = html.Div(
 app.layout = html.Div(
     [
         dcc.Store(id="tool-sidebar-state", data={"open": False, "selected": None}),
+        dcc.Store(id="chat-history", data=[]),
+        dcc.Store(id="chat-pending", data=None),
         html.Button(id="toolbar-toggle-btn", className="toolbar-toggle-btn"),
         html.Div(id="sidebar-overlay", className="sidebar-overlay"),
         html.Div(
@@ -803,6 +896,13 @@ def sync_ticker_with_preset(preset_ticker: str):
     Output("calc-mode-toggle", "options"),
     Output("range-radio", "options"),
     Output("preset-stock", "options"),
+    Output("tool-chat-btn", "children"),
+    Output("chat-title", "children"),
+    Output("chat-intro", "children"),
+    Output("chat-input", "placeholder"),
+    Output("chat-send-btn", "children"),
+    Output("chat-clear-btn", "children"),
+    Output("tool-chat-close-btn", "children"),
     Input("language-radio", "value"),
 )
 def update_static_text(lang: str):
@@ -831,6 +931,13 @@ def update_static_text(lang: str):
             {"label": "5年" if current_lang == "zh" else "5Y", "value": "5Y"},
         ],
         make_preset_options(current_lang),
+        t(current_lang, "tool_chat_name"),
+        t(current_lang, "chat_title"),
+        t(current_lang, "chat_intro"),
+        t(current_lang, "chat_input_placeholder"),
+        t(current_lang, "chat_send"),
+        t(current_lang, "chat_clear"),
+        t(current_lang, "close_tool"),
     )
 
 
@@ -838,12 +945,14 @@ def update_static_text(lang: str):
     Output("tool-sidebar-state", "data"),
     Input("toolbar-toggle-btn", "n_clicks"),
     Input("tool-annualized-btn", "n_clicks"),
+    Input("tool-chat-btn", "n_clicks"),
     Input("tool-close-btn", "n_clicks"),
+    Input("tool-chat-close-btn", "n_clicks"),
     Input("sidebar-overlay", "n_clicks"),
     State("tool-sidebar-state", "data"),
     prevent_initial_call=True,
 )
-def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, close_tool_clicks, overlay_clicks, state):
+def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, chat_clicks, close_tool_clicks, close_chat_clicks, overlay_clicks, state):
     sidebar_state = state or {"open": False, "selected": None}
     trigger = ctx.triggered_id
 
@@ -857,7 +966,10 @@ def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, close_tool_clic
     if trigger == "tool-annualized-btn":
         return {"open": True, "selected": "annualized"}
 
-    if trigger == "tool-close-btn":
+    if trigger == "tool-chat-btn":
+        return {"open": True, "selected": "chat"}
+
+    if trigger in ("tool-close-btn", "tool-chat-close-btn"):
         return {"open": True, "selected": None}
 
     return sidebar_state
@@ -869,6 +981,8 @@ def update_tool_sidebar_state(toolbar_clicks, annualized_clicks, close_tool_clic
     Output("sidebar-overlay", "className"),
     Output("tool-menu", "style"),
     Output("sidebar-tool-content", "style"),
+    Output("calculator-card", "style"),
+    Output("chat-card", "style"),
     Input("tool-sidebar-state", "data"),
 )
 def render_tool_sidebar(state):
@@ -876,20 +990,30 @@ def render_tool_sidebar(state):
     is_open = bool(sidebar_state.get("open"))
     selected = sidebar_state.get("selected")
 
+    hidden = {"display": "none"}
+
     if not is_open:
         return (
             "app-shell sidebar-closed",
             "sidebar sidebar-collapsed",
             "sidebar-overlay",
-            {"display": "none"},
-            {"display": "none"},
+            hidden,
+            hidden,
+            hidden,
+            hidden,
         )
 
     menu_style = {"display": "grid"}
     content_style = {"display": "none"}
+    calc_style = hidden
+    chat_style = hidden
 
     if selected == "annualized":
         content_style = {"display": "grid"}
+        calc_style = {"display": "block"}
+    elif selected == "chat":
+        content_style = {"display": "grid"}
+        chat_style = {"display": "flex"}
 
     return (
         "app-shell sidebar-open",
@@ -897,6 +1021,8 @@ def render_tool_sidebar(state):
         "sidebar-overlay active",
         menu_style,
         content_style,
+        calc_style,
+        chat_style,
     )
 
 
@@ -1034,6 +1160,152 @@ def update_dashboard(ticker: str, start_date: str, end_date: str, lang: str):
         make_valuation_panel(ticker, current_lang),
         "",
     )
+
+
+def _render_chat_messages(history: list[dict], lang: str) -> list:
+    if not history:
+        return [html.Div(t(lang, "chat_empty"), className="chat-empty")]
+    user_label = t(lang, "chat_role_user")
+    assistant_label = t(lang, "chat_role_assistant")
+    bubbles = []
+    for msg in history:
+        role = msg.get("role")
+        content = str(msg.get("content") or "")
+        is_pending = bool(msg.get("pending"))
+        if role == "user":
+            label, css = user_label, "chat-bubble chat-bubble-user"
+        else:
+            label = assistant_label
+            css = "chat-bubble chat-bubble-assistant"
+            if is_pending:
+                css += " chat-bubble-pending"
+        text_node = (
+            html.Div(
+                [html.Span(content, className="chat-thinking-text"), html.Span(className="chat-thinking-dots")],
+                className="chat-bubble-text",
+            )
+            if is_pending
+            else html.Div(content, className="chat-bubble-text")
+        )
+        bubbles.append(
+            html.Div(
+                [html.Div(label, className="chat-bubble-role"), text_node],
+                className=css,
+            )
+        )
+    return bubbles
+
+
+def _call_agent_service(service_url: str, history: list[dict], lang: str) -> str:
+    payload = json.dumps({"messages": history, "lang": lang}).encode("utf-8")
+    url = service_url.rstrip("/") + "/chat"
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={"Content-Type": "application/json"},
+        method="POST",
+    )
+    with urllib.request.urlopen(req, timeout=AGENT_REQUEST_TIMEOUT_SEC) as resp:
+        body = resp.read().decode("utf-8")
+    data = json.loads(body)
+    return str(data.get("reply") or "")
+
+
+@app.callback(
+    Output("chat-messages", "children"),
+    Input("chat-history", "data"),
+    Input("language-radio", "value"),
+)
+def render_chat_messages(history, lang):
+    return _render_chat_messages(history or [], lang if lang in I18N else "zh")
+
+
+@app.callback(
+    Output("chat-history", "data"),
+    Output("chat-input", "value"),
+    Output("chat-pending", "data"),
+    Output("chat-send-btn", "disabled"),
+    Input("chat-send-btn", "n_clicks"),
+    Input("chat-clear-btn", "n_clicks"),
+    State("chat-input", "value"),
+    State("chat-history", "data"),
+    State("language-radio", "value"),
+    prevent_initial_call=True,
+)
+def handle_chat_action(send_clicks, clear_clicks, user_text, history, lang):
+    """User-facing click handler.
+
+    Runs synchronously in the browser/server hop, so it must NOT call the
+    agent. It only updates the store; the actual agent call happens in
+    :func:`call_chat_agent` triggered by the ``chat-pending`` store change.
+    """
+    trigger = ctx.triggered_id
+    history = list(history or [])
+    current_lang = lang if lang in I18N else "zh"
+
+    if trigger == "chat-clear-btn":
+        return [], "", None, False
+
+    if trigger != "chat-send-btn":
+        return no_update, no_update, no_update, no_update
+
+    text = (user_text or "").strip()
+    if not text:
+        return no_update, no_update, no_update, no_update
+
+    history.append({"role": "user", "content": text})
+    history.append(
+        {"role": "assistant", "content": t(current_lang, "chat_thinking"), "pending": True}
+    )
+    history = history[-MAX_CHAT_HISTORY:]
+    return history, "", {"query": text}, True
+
+
+@app.callback(
+    Output("chat-history", "data", allow_duplicate=True),
+    Output("chat-pending", "data", allow_duplicate=True),
+    Output("chat-send-btn", "disabled", allow_duplicate=True),
+    Input("chat-pending", "data"),
+    State("chat-history", "data"),
+    State("language-radio", "value"),
+    prevent_initial_call=True,
+)
+def call_chat_agent(pending, history, lang):
+    """Performs the (potentially slow) call to the agent service.
+
+    Triggered when ``chat-pending`` transitions from None -> {...}. We then
+    clear the pending state, which fires this callback again with no payload
+    (early-return below).
+    """
+    if not pending or not pending.get("query"):
+        return no_update, no_update, no_update
+
+    history = list(history or [])
+    current_lang = lang if lang in I18N else "zh"
+    url = DEFAULT_AGENT_SERVICE_URL
+
+    # Strip pending placeholders before sending so the agent sees only real turns.
+    sent = [{"role": m.get("role"), "content": m.get("content")} for m in history if not m.get("pending")]
+
+    try:
+        reply = _call_agent_service(url, sent, current_lang)
+    except (TimeoutError, socket.timeout):
+        reply = t(current_lang, "chat_error_timeout").format(sec=int(AGENT_REQUEST_TIMEOUT_SEC))
+    except urllib.error.URLError as exc:
+        if isinstance(getattr(exc, "reason", None), (TimeoutError, socket.timeout)):
+            reply = t(current_lang, "chat_error_timeout").format(sec=int(AGENT_REQUEST_TIMEOUT_SEC))
+        else:
+            reply = t(current_lang, "chat_error_network")
+    except Exception as exc:  # noqa: BLE001 - surface the message to the user
+        reply = f"{t(current_lang, 'chat_error_generic')}: {exc}"
+
+    # Replace the trailing pending placeholder with the real reply.
+    if history and history[-1].get("pending"):
+        history[-1] = {"role": "assistant", "content": reply}
+    else:
+        history.append({"role": "assistant", "content": reply})
+    history = history[-MAX_CHAT_HISTORY:]
+    return history, None, False
 
 
 if __name__ == "__main__":

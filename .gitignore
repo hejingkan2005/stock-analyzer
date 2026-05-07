@@ -3,3 +3,7 @@ __pycache__/
 *.zip
 .funcpkg*/
 .venv/
+
+# dexter agent runtime context cache
+.dexter/
+

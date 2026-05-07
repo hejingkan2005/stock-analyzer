@@ -10,3 +10,31 @@ dependencies = [
     "plotly>=5.22.0",
     "yfinance>=0.2.40",
 ]
+
+[project.optional-dependencies]
+# Dependencies for the standalone chat agent microservice (agent_service/).
+# The Dash app itself does NOT need these; install only on the host that
+# runs the microservice:  uv sync --extra agent
+#
+# The dexter backend is vendored under agent_service/vendor/dexter
+# (from https://github.com/virattt/dexter/tree/fa967cd/legacy) so its
+# runtime dependencies are listed here directly.
+agent = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "pydantic>=2.11.10",
+    # dexter (legacy Python implementation) runtime deps
+    # Pinned to the 0.3.x langchain line; dexter imports `langchain.prompts`
+    # which was removed in langchain 1.0.
+    "googlenewsdecoder>=0.1.7",
+    "langchain>=0.3.27,<1.0",
+    "langchain-openai>=0.3.35,<1.0",
+    "langchain-anthropic>=0.3.0,<1.0",
+    "langchain-google-genai>=2.0.0,<3.0",
+    "langchain-core>=0.3.0,<1.0",
+    "langsmith>=0.3.37,<0.4",
+    "openai>=1.50.0,<2.0",
+    "prompt-toolkit>=3.0.0",
+    "python-dotenv>=1.1.1",
+    "requests>=2.32.5",
+]

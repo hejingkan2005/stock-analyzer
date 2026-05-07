@@ -21,10 +21,10 @@ jobs:
         uses: astral-sh/setup-uv@v3
 
       - name: Sync dependencies with uv
-        run: uv sync --locked
+        run: uv sync --locked --extra agent
 
       - name: Export dependencies for Azure build
-        run: uv export --format requirements-txt --no-hashes --output-file requirements.txt
+        run: uv export --format requirements-txt --no-hashes --extra agent --output-file requirements.txt
 
       - name: Deploy to Azure Functions
         uses: Azure/functions-action@v1
