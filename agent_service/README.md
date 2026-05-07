@@ -23,10 +23,8 @@ uv sync --extra agent
 ```
 
 The dexter Python sources are **vendored** under `agent_service/vendor/dexter`
-(from
-[virattt/dexter @ fa967cd / legacy](https://github.com/virattt/dexter/tree/fa967cd008435ec213ba5c4fabc0c87a40b55442/legacy))
-because the upstream repo no longer publishes a Python package — its `main`
-branch is now a TypeScript app. No extra `uv add` step is needed.
+(an async event-based Python port, currently `dexter-py 2026.5.7`). No extra
+`uv add` step is needed.
 
 ## Configure
 
@@ -37,31 +35,45 @@ real keys):
 $env:AGENT_BACKEND = "dexter"
 $env:OPENAI_API_KEY = "sk-..."             # paste later
 $env:FINANCIAL_DATASETS_API_KEY = "..."    # paste later
-$env:EXA_API_KEY = "..."                   # optional, enables web search tool
+$env:EXASEARCH_API_KEY = "..."             # optional, enables Exa web search
+$env:DEXTER_HOME = "$env:TEMP\dexter"      # optional, scratchpad/cache dir
 $env:AGENT_ALLOWED_ORIGINS = "http://localhost:8050"
 ```
 
-### Web search tool (Exa)
+### Web search tool
 
-Dexter's news/web-search tool uses [Exa.ai](https://exa.ai). Set
-`EXA_API_KEY` to enable it; if the variable is unset the tool simply returns
-no results and the agent falls back to its other tools.
+Dexter's web-search tool auto-selects a provider based on which key is set:
+`EXASEARCH_API_KEY` ([Exa.ai](https://exa.ai)) is preferred, falling back to
+`PERPLEXITY_API_KEY` then `TAVILY_API_KEY`. If none are set the tool is
+omitted from the registry and the agent falls back to its other tools.
+
+### Cache directory
+
+Dexter persists its scratchpad and tool cache under `~/.dexter` by default;
+set `DEXTER_HOME` to override (the adapter auto-points it at the OS temp dir
+if you don't set it, so it Just Works on Azure).
 
 ### Using OpenRouter (or any OpenAI-compatible provider)
 
 OpenRouter exposes an OpenAI-compatible API, so dexter can use it with two
 extra environment variables:
 
+Two equivalent options:
+
 ```powershell
-$env:OPENAI_API_KEY  = "sk-or-v1-..."                  # your OpenRouter key
+# Option 1 — native OpenRouter prefix (recommended)
+$env:OPENROUTER_API_KEY = "sk-or-v1-..."
+$env:DEXTER_MODEL       = "openrouter:openai/gpt-4o-mini"
+
+# Option 2 — repurpose the OpenAI client at the OpenRouter endpoint
+$env:OPENAI_API_KEY  = "sk-or-v1-..."
 $env:OPENAI_BASE_URL = "https://openrouter.ai/api/v1"
-$env:DEXTER_MODEL    = "openai/gpt-4o-mini"            # any OpenRouter model id
+$env:DEXTER_MODEL    = "openai/gpt-4o-mini"
 ```
 
-`DEXTER_MODEL` overrides dexter's default `gpt-4.1` and must use the
-provider's namespaced model id (e.g. `openai/gpt-4o-mini`,
-`anthropic/claude-3.5-sonnet`). The same pattern works for Together, Groq,
-DeepInfra, etc. — just change `OPENAI_BASE_URL` and `DEXTER_MODEL`.
+`DEXTER_MODEL` overrides dexter's default `gpt-4o-mini`. The new dexter is
+multi-provider and routes by prefix (`openrouter:`, `claude-`, `gemini-`,
+`groq:`, etc.) — no monkey-patching required.
 
 Leave `OPENAI_API_KEY` / `FINANCIAL_DATASETS_API_KEY` blank for now and the
 service will report a friendly "not configured" response. Update them later

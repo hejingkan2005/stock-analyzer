@@ -1,53 +1,34 @@
+"""User settings persisted at .dexter/settings.json."""
+
+from __future__ import annotations
+
 import json
-import os
-from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
-SETTINGS_FILE = Path(".dexter/settings.json")
+from .paths import settings_path
 
-def load_config() -> Dict[str, Any]:
-    """
-    Load configuration from .dexter/settings.json.
-    Returns an empty dict if the file doesn't exist or is invalid.
-    """
-    if not SETTINGS_FILE.exists():
+
+def load_settings() -> dict[str, Any]:
+    p = settings_path()
+    if not p.exists():
         return {}
-    
     try:
-        with open(SETTINGS_FILE, 'r') as f:
-            return json.load(f)
-    except (json.JSONDecodeError, OSError) as e:
-        # If file is corrupt or unreadable, return empty config
-        # We might want to log this warning if we had a logger set up here
+        return json.loads(p.read_text(encoding="utf-8"))
+    except Exception:
         return {}
 
-def save_config(config: Dict[str, Any]) -> bool:
-    """
-    Save configuration to .dexter/settings.json.
-    Returns True if successful, False otherwise.
-    """
-    try:
-        # Ensure directory exists
-        SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
-        
-        with open(SETTINGS_FILE, 'w') as f:
-            json.dump(config, f, indent=2)
-        return True
-    except OSError:
-        return False
+
+def save_settings(data: dict[str, Any]) -> None:
+    p = settings_path()
+    p.parent.mkdir(parents=True, exist_ok=True)
+    p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
 
 def get_setting(key: str, default: Any = None) -> Any:
-    """
-    Get a setting value by key.
-    """
-    config = load_config()
-    return config.get(key, default)
+    return load_settings().get(key, default)
 
-def set_setting(key: str, value: Any) -> bool:
-    """
-    Set a setting value and save to file.
-    """
-    config = load_config()
-    config[key] = value
-    return save_config(config)
 
+def set_setting(key: str, value: Any) -> None:
+    data = load_settings()
+    data[key] = value
+    save_settings(data)

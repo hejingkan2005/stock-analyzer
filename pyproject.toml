@@ -17,24 +17,23 @@ dependencies = [
 # runs the microservice:  uv sync --extra agent
 #
 # The dexter backend is vendored under agent_service/vendor/dexter
-# (from https://github.com/virattt/dexter/tree/fa967cd/legacy) so its
-# runtime dependencies are listed here directly.
+# (from the new Python port: D:/vs_project/dexter-python) so its runtime
+# dependencies are listed here directly.
 agent = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
-    "pydantic>=2.11.10",
-    # dexter (legacy Python implementation) runtime deps
-    # Pinned to the 0.3.x langchain line; dexter imports `langchain.prompts`
-    # which was removed in langchain 1.0.
-    "googlenewsdecoder>=0.1.7",
-    "langchain>=0.3.27,<1.0",
-    "langchain-openai>=0.3.35,<1.0",
-    "langchain-anthropic>=0.3.0,<1.0",
-    "langchain-google-genai>=2.0.0,<3.0",
+    "pydantic>=2.5.0",
+    # dexter (Python port) runtime deps
     "langchain-core>=0.3.0,<1.0",
-    "langsmith>=0.3.37,<0.4",
-    "openai>=1.50.0,<2.0",
-    "prompt-toolkit>=3.0.0",
-    "python-dotenv>=1.1.1",
-    "requests>=2.32.5",
+    "langchain-openai>=0.2.0,<1.0",
+    "python-dotenv>=1.0.0",
+    "httpx>=0.27.0",
+    "rich>=13.7.0",
+    "typer>=0.12.0",
+    "python-frontmatter>=1.1.0",
+    "beautifulsoup4>=4.12.0",
+    "readability-lxml>=0.8.1",
+    "lxml>=5.0.0",
+    "html2text>=2024.2.26",
+    "requests>=2.32.0",
 ]

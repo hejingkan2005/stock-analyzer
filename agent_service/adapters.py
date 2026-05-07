@@ -2,14 +2,17 @@
 
 Each adapter exposes a single method ``run(messages, lang) -> str``. This keeps
 the HTTP layer agnostic of the underlying agent so the backend can be swapped
-later (dexter, a different LangGraph agent, a hosted API, etc.) without
-changing the Dash UI or the FastAPI surface.
+later without changing the Dash UI or the FastAPI surface.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import re
+import sys
+import tempfile
+from pathlib import Path
 from typing import Iterable, Protocol
 
 
@@ -28,19 +31,12 @@ class Agent(Protocol):
     def run(self, messages: list[ChatMessage], lang: str) -> str: ...
 
 
-def _last_user_text(messages: Iterable[ChatMessage]) -> str:
-    for msg in reversed(list(messages)):
-        if msg.get("role") == "user":
-            return str(msg.get("content") or "")
-    return ""
-
-
 class NotConfiguredAgent:
     """Fallback used when no real backend is wired up or keys are missing."""
 
     name = "not-configured"
 
-    def __init__(self, reason: str):
+    def __init__(self, reason: str) -> None:
         self._reason = reason
 
     def run(self, messages: list[ChatMessage], lang: str) -> str:
@@ -62,34 +58,47 @@ class NotConfiguredAgent:
 
 
 class DexterAgent:
-    """Adapter around the open-source `virattt/dexter` LangGraph agent.
+    """Adapter around the open-source `virattt/dexter-py` financial agent.
 
-    Dexter's Python implementation is no longer published from the repo root
-    (the project moved to TypeScript). We vendor the legacy Python package
-    from commit ``fa967cd`` under ``agent_service/vendor/dexter`` so we can
-    import it directly. Source:
-    https://github.com/virattt/dexter/tree/fa967cd008435ec213ba5c4fabc0c87a40b55442/legacy
+    We vendor the package under ``agent_service/vendor/dexter`` so it can be
+    imported without an extra `uv add`. The agent exposes an async iterator
+    of ``AgentEvent`` objects; we drive it to completion and return the
+    final ``DoneEvent.answer``.
     """
 
     name = "dexter"
 
-    def __init__(self):
-        self._agent_cls = None
+    def __init__(self) -> None:
+        self._loaded = False
+        self._Agent = None  # type: ignore[assignment]
+        self._AgentConfig = None  # type: ignore[assignment]
+        self._DoneEvent = None  # type: ignore[assignment]
+        self._ErrorEvent = None  # type: ignore[assignment]
 
-    def _load(self):
-        if self._agent_cls is not None:
+    def _load(self) -> None:
+        if self._loaded:
             return
-        # Make the vendored sources importable as the top-level ``dexter``
-        # package (its internal imports use ``from dexter.xxx import ...``).
-        import sys
-        from pathlib import Path
 
+        # 1. Make the vendored sources importable as the top-level ``dexter``
+        #    package (its internal imports use ``from dexter.xxx import ...``).
         vendor_root = Path(__file__).resolve().parent / "vendor"
         if str(vendor_root) not in sys.path:
             sys.path.insert(0, str(vendor_root))
 
+        # 2. Force DEXTER_HOME to a writable directory before any dexter
+        #    submodule touches the filesystem. Azure Functions has a
+        #    read-only package dir; the user's $HOME may be writable but
+        #    $TMPDIR is the safest universal choice.
+        if not os.environ.get("DEXTER_HOME"):
+            os.environ["DEXTER_HOME"] = os.path.join(tempfile.gettempdir(), "dexter")
+
         try:
-            from dexter.agent import Agent as DexterAgentCls  # type: ignore
+            from dexter.agent import (  # type: ignore
+                Agent as DexterAgentCls,
+                AgentConfig,
+                DoneEvent,
+                ErrorEvent,
+            )
         except Exception as exc:  # pragma: no cover - import-time failure
             raise RuntimeError(
                 "Failed to import the vendored dexter package. Make sure the "
@@ -97,113 +106,56 @@ class DexterAgent:
                 f"Underlying error: {exc}"
             ) from exc
 
-        # OpenAI-compatible providers (e.g. OpenRouter, Together, Groq) are
-        # supported by routing dexter's ChatOpenAI through a custom base URL.
-        # Activate when OPENAI_BASE_URL is set.
-        base_url = os.getenv("OPENAI_BASE_URL") or os.getenv("OPENAI_API_BASE")
-        if base_url:
-            try:
-                from langchain_openai import ChatOpenAI as _ChatOpenAI
-                import dexter.model as _dexter_model  # type: ignore
-
-                _orig = _ChatOpenAI
-
-                def _patched_chat_openai(*args, **kwargs):  # type: ignore[no-untyped-def]
-                    kwargs.setdefault("base_url", base_url)
-                    # OpenRouter uses the same OPENAI_API_KEY var; nothing to do.
-                    return _orig(*args, **kwargs)
-
-                _dexter_model.ChatOpenAI = _patched_chat_openai  # type: ignore[attr-defined]
-            except Exception as exc:  # pragma: no cover
-                raise RuntimeError(
-                    f"Failed to configure custom OpenAI base URL: {exc}"
-                ) from exc
-
-        self._agent_cls = DexterAgentCls
-        self._patch_dexter_writable_paths()
-
-    @staticmethod
-    def _patch_dexter_writable_paths() -> None:
-        """Redirect dexter's on-disk caches to a writable directory.
-
-        Dexter writes to ``./.dexter/settings.json`` and ``./.dexter/context/``
-        relative to the process CWD. On Azure Functions / App Service the
-        package directory is read-only, so we point both at a writable temp
-        path (``DEXTER_HOME`` if set, otherwise ``$TMPDIR/dexter``).
-        """
-        import tempfile
-        from pathlib import Path
-
-        base_dir = Path(os.getenv("DEXTER_HOME") or os.path.join(tempfile.gettempdir(), "dexter"))
-        try:
-            base_dir.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            return  # if even tmp is unwritable, let dexter fail loudly later
-
-        try:
-            import dexter.utils.config as _cfg  # type: ignore
-            import dexter.utils.context as _ctx  # type: ignore
-
-            _cfg.SETTINGS_FILE = base_dir / "settings.json"
-
-            _orig_init = _ctx.ContextManager.__init__
-
-            def _patched_init(self, context_dir: str = str(base_dir / "context"), *args, **kwargs):  # type: ignore[no-untyped-def]
-                # Force the context directory to live under our writable base
-                # regardless of the caller-supplied path.
-                _orig_init(self, context_dir=str(base_dir / "context"), *args, **kwargs)
-
-            _ctx.ContextManager.__init__ = _patched_init  # type: ignore[assignment]
-        except Exception:
-            # If the internal layout changed, just leave defaults; the
-            # original FileSystem error will surface in the user's reply.
-            pass
+        self._Agent = DexterAgentCls
+        self._AgentConfig = AgentConfig
+        self._DoneEvent = DoneEvent
+        self._ErrorEvent = ErrorEvent
+        self._loaded = True
 
     def run(self, messages: list[ChatMessage], lang: str) -> str:
         del lang  # dexter does not accept a language hint; set it in the query if needed.
         self._load()
-        assert self._agent_cls is not None
+        assert self._Agent is not None and self._AgentConfig is not None
 
         query = _last_user_text(messages)
         if not query:
             return ""
 
-        # Dexter prints to stdout while it works. Capture stdout so server
-        # logs stay clean and only the final answer is returned to the UI.
-        import contextlib
-        import io
-
-        # DEXTER_MODEL overrides dexter's default ("gpt-4.1"). Required when
-        # using OpenRouter, where models are namespaced like
-        # "openai/gpt-4o-mini" or "anthropic/claude-3.5-sonnet".
-        model_name = os.getenv("DEXTER_MODEL")
-        # Step caps: dexter's defaults (20 / 5) can run for many minutes when
-        # a query has no matching data (e.g. HK tickers in financial-datasets);
-        # lower them to fail fast unless the operator opts back in.
-        kwargs: dict = {}
-        if model_name:
-            kwargs["model"] = model_name
+        # The new dexter is multi-provider. Three ways to point at OpenRouter:
+        #   1. DEXTER_MODEL=openrouter:openai/gpt-4o-mini   + OPENROUTER_API_KEY
+        #   2. DEXTER_MODEL=gpt-4o-mini + OPENAI_API_KEY=<openrouter-key>
+        #      + OPENAI_BASE_URL=https://openrouter.ai/api/v1
+        # Default model name kept the same as upstream ("gpt-4o-mini").
+        model = os.getenv("DEXTER_MODEL", "gpt-4o-mini")
         try:
-            kwargs["max_steps"] = int(os.getenv("DEXTER_MAX_STEPS", "8"))
-            kwargs["max_steps_per_task"] = int(os.getenv("DEXTER_MAX_STEPS_PER_TASK", "3"))
+            max_iters = int(os.getenv("DEXTER_MAX_STEPS", "10"))
         except ValueError:
-            pass
-        agent = self._agent_cls(**kwargs)
-        buf = io.StringIO()
+            max_iters = 10
+
+        cfg = self._AgentConfig(model=model, max_iterations=max_iters)
+        agent = self._Agent(cfg)
+
+        async def _drive() -> tuple[str, str | None]:
+            answer = ""
+            error = None
+            async for event in agent.run(query):
+                if isinstance(event, self._DoneEvent):
+                    answer = event.answer or ""
+                elif isinstance(event, self._ErrorEvent):
+                    error = event.message
+            return answer, error
+
         try:
-            with contextlib.redirect_stdout(buf):
-                answer = agent.run(query)
+            answer, error = asyncio.run(_drive())
         except Exception as exc:
             raise RuntimeError(f"Dexter agent invocation failed: {exc}") from exc
 
-        cleaned = str(answer or "").strip()
+        cleaned = _strip_ansi(str(answer or "")).strip()
         if cleaned:
             return cleaned
-        # Dexter sometimes returns an empty answer (e.g. all tool calls failed
-        # because the data provider doesn't support the ticker). Do NOT fall
-        # back to the captured stdout — it's CLI progress noise (spinners,
-        # box-drawing characters, ANSI codes) that renders as garbage in the
-        # chat bubble. Return a clean, actionable message instead.
+
+        # Empty answer: provide a friendly fallback so the chat bubble shows
+        # something actionable instead of a blank message.
         msg = (
             "Sorry, I couldn't produce an answer for that query. "
             "The financial-datasets backend mostly covers US-listed tickers, "
@@ -211,13 +163,8 @@ class DexterAgent:
             "US ADR instead (e.g. TCEHY for Tencent, BABA for Alibaba), or "
             "rephrase the question."
         )
-        log_tail = "\n".join(
-            _strip_ansi(line).rstrip()
-            for line in buf.getvalue().splitlines()[-6:]
-            if _strip_ansi(line).strip()
-        )
-        if log_tail:
-            msg += f"\n\nLast agent activity:\n{log_tail}"
+        if error:
+            msg += f"\n\nLast error: {error}"
         return msg
 
 
@@ -243,26 +190,34 @@ def build_agent() -> Agent:
         Required for the dexter backend. If missing we return a
         NotConfiguredAgent that explains how to fix it.
     OPENAI_BASE_URL (optional):
-        Point dexter at an OpenAI-compatible provider such as OpenRouter,
-        Together, or Groq. Example: https://openrouter.ai/api/v1
+        Point the OpenAI provider at any OpenAI-compatible endpoint
+        (e.g. https://openrouter.ai/api/v1).
     DEXTER_MODEL (optional):
-        Override dexter's default model name ("gpt-4.1"). Required with
-        OpenRouter, e.g. "openai/gpt-4o-mini".
+        Model id passed to the agent. Default: gpt-4o-mini.
+        Use ``openrouter:<provider>/<model>`` to route via OpenRouter.
     """
-    backend = (os.getenv("AGENT_BACKEND") or "dexter").strip().lower()
-
+    backend = (os.getenv("AGENT_BACKEND") or "dexter").lower()
     if backend == "echo":
         return EchoAgent()
-
     if backend == "dexter":
-        missing = [
-            name
-            for name in ("OPENAI_API_KEY", "FINANCIAL_DATASETS_API_KEY")
-            if not os.getenv(name)
-        ]
+        # The new dexter is multi-provider, so the required key depends on
+        # which model the user picked. We only hard-require an OpenAI-style
+        # key by default and the financial datasets key (always needed).
+        missing = []
+        if not (os.getenv("OPENAI_API_KEY") or os.getenv("OPENROUTER_API_KEY")):
+            missing.append("OPENAI_API_KEY (or OPENROUTER_API_KEY)")
+        if not os.getenv("FINANCIAL_DATASETS_API_KEY"):
+            missing.append("FINANCIAL_DATASETS_API_KEY")
         if missing:
             return NotConfiguredAgent(
                 f"Missing environment variables: {', '.join(missing)}"
             )
         return DexterAgent()
     return NotConfiguredAgent(f"Unknown AGENT_BACKEND={backend!r}")
+
+
+def _last_user_text(messages: Iterable[ChatMessage]) -> str:
+    for msg in reversed(list(messages)):
+        if msg.get("role") == "user":
+            return str(msg.get("content") or "").strip()
+    return ""
